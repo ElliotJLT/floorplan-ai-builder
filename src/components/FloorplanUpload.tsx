@@ -105,18 +105,11 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
       setPreview(compressed);
       
       // Run CV detection
-      toast.info("Detecting room boundaries...");
       const { contours, overlayCanvas } = await detectRoomBoundaries(compressed);
       
       setDetectedContours(contours);
       setOverlayCanvas(overlayCanvas);
-      setShowOverlay(true);
-      
-      if (contours.length === 0) {
-        toast.warning("No room boundaries detected. AI will analyze the layout.");
-      } else {
-        toast.success(`Detected ${contours.length} room boundaries! Review and click Analyze.`);
-      }
+      setShowOverlay(contours.length > 0);
     } catch (e) {
       console.error(e);
       toast.error("Failed to process image. Please try another file.");
