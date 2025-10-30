@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Upload, FileImage } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ interface FloorplanUploadProps {
 export const FloorplanUpload = ({ onFloorplanUploaded }: FloorplanUploadProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -41,6 +42,10 @@ export const FloorplanUpload = ({ onFloorplanUploaded }: FloorplanUploadProps) =
     const file = e.target.files?.[0];
     if (file) handleFile(file);
   }, [handleFile]);
+
+  const triggerFileSelect = () => {
+    fileInputRef.current?.click();
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-background to-slate-100 p-6">
@@ -77,18 +82,14 @@ export const FloorplanUpload = ({ onFloorplanUploaded }: FloorplanUploadProps) =
                 className="w-full h-auto rounded-lg shadow-lg"
               />
               <div className="flex gap-4 justify-center">
-                <label>
-                  <Button variant="outline" className="cursor-pointer">
-                    <FileImage className="mr-2 h-4 w-4" />
-                    Choose Different File
-                  </Button>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileInput}
-                    className="hidden"
-                  />
-                </label>
+                <Button 
+                  variant="outline" 
+                  onClick={triggerFileSelect}
+                  className="cursor-pointer"
+                >
+                  <FileImage className="mr-2 h-4 w-4" />
+                  Choose Different File
+                </Button>
               </div>
             </div>
           ) : (
@@ -106,18 +107,22 @@ export const FloorplanUpload = ({ onFloorplanUploaded }: FloorplanUploadProps) =
                 </p>
               </div>
 
-              <label>
-                <Button size="lg" className="cursor-pointer">
-                  <FileImage className="mr-2 h-5 w-5" />
-                  Select File
-                </Button>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileInput}
-                  className="hidden"
-                />
-              </label>
+              <Button 
+                size="lg" 
+                onClick={triggerFileSelect}
+                className="cursor-pointer"
+              >
+                <FileImage className="mr-2 h-5 w-5" />
+                Select File
+              </Button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileInput}
+                className="hidden"
+              />
 
               <p className="text-sm text-muted-foreground">
                 Supports PNG, JPG, JPEG formats
