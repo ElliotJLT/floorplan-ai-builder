@@ -309,7 +309,7 @@ DUPLICATE PREVENTION (CRITICAL):
     // ========================================================================
     console.log('\n--- STAGE 4: Agentic Adjacency Verification ---');
 
-    let adjacency;
+    let adjacency: any[] = [];
     try {
       // Hard timeout to prevent function timeouts when the agent loops too long
       const AGENT_TIMEOUT_MS = 12000;
@@ -317,7 +317,7 @@ DUPLICATE PREVENTION (CRITICAL):
       adjacency = await Promise.race([
         agentPromise,
         new Promise((_, reject) => setTimeout(() => reject(new Error('agent_timeout')), AGENT_TIMEOUT_MS))
-      ]);
+      ]) as any[];
       console.log(`✓ Agent determined ${adjacency.length} adjacency relationships`);
 
       // Fallback to geometric if agent returns nothing
