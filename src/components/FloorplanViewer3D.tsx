@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Home, Move, RotateCcw } from "lucide-react";
 import { Room as RoomType, FloorplanData } from "@/types/floorplan";
 
-const Room3D = ({ room }: { room: RoomType }) => {
+const Room3D = ({ room, isSelected, onSelect }: { room: RoomType; isSelected: boolean; onSelect: () => void }) => {
   const [hovered, setHovered] = useState(false);
   const [width, height, depth] = room.dimensions;
 
@@ -18,10 +18,11 @@ const Room3D = ({ room }: { room: RoomType }) => {
         position={[0, 0, 0]}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
+        onClick={onSelect}
       >
         <planeGeometry args={[width, depth]} />
         <meshStandardMaterial 
-          color={hovered ? "#14b8a6" : room.color}
+          color={isSelected ? "#3b82f6" : hovered ? "#14b8a6" : room.color}
           side={THREE.DoubleSide}
           transparent
           opacity={0.9}
@@ -83,16 +84,33 @@ interface FloorplanViewer3DProps {
   floorplanImage: string;
   floorplanData: FloorplanData;
   onBack: () => void;
+  onUpdate: (data: FloorplanData) => void;
 }
 
-export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack }: FloorplanViewer3DProps) => {
-  const [controlsMode, setControlsMode] = useState<"orbit" | "first-person">("orbit");
+export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpdate }: FloorplanViewer3DProps) => {
+  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
+  const [editingRoom, setEditingRoom] = useState<string | null>(null);
+  const [localData, setLocalData] = useState(floorplanData);
   const controlsRef = useRef<any>();
 
   const handleReset = () => {
     if (controlsRef.current) {
       controlsRef.current.reset();
     }
+  };
+
+  const selectedRoomData = selectedRoom ? localData.rooms.find(r => r.id === selectedRoom) : null;
+  const editingRoomData = editingRoom ? localData.rooms.find(r => r.id === editingRoom) : null;
+
+  const updateRoom = (roomId: string, updates: Partial<RoomType>) => {
+    const updatedData = {
+      ...localData,
+      rooms: localData.rooms.map(room =>
+        room.id === roomId ? { ...room, ...updates } : room
+      )
+    };
+    setLocalData(updatedData);
+    onUpdate(updatedData);
   };
 
   return (
@@ -137,8 +155,13 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack }: Flo
         <directionalLight position={[-10, 10, -5]} intensity={0.5} />
 
         {/* Rooms */}
-        {floorplanData.rooms.map((room) => (
-          <Room3D key={room.id} room={room} />
+        {localData.rooms.map((room) => (
+          <Room3D 
+            key={room.id} 
+            room={room}
+            isSelected={selectedRoom === room.id}
+            onSelect={() => setSelectedRoom(room.id)}
+          />
         ))}
 
         {/* Ground plane */}
@@ -169,22 +192,125 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack }: Flo
         </div>
       </div>
 
-      {/* Info Panel */}
-      <div className="absolute top-24 left-6 z-10 bg-slate-800/90 backdrop-blur-sm p-4 rounded-xl border border-slate-700 max-w-xs">
-        <h3 className="text-white font-semibold mb-2">Room Details</h3>
-        <div className="space-y-1 text-sm text-slate-300">
-          {floorplanData.rooms.map((room) => (
-            room.originalMeasurements && (
-              <p key={room.id}>
-                • {room.name}: {room.originalMeasurements.width} × {room.originalMeasurements.depth}
-              </p>
-            )
-          ))}
-          <p className="pt-2 border-t border-slate-600 mt-2">
-            • Ceiling Height: {floorplanData.ceilingHeight}m
-          </p>
+      {/* Selected Room Panel */}
+      {selectedRoomData && !editingRoom && (
+        <div className="absolute bottom-24 left-6 z-10 bg-slate-800/90 backdrop-blur-sm p-4 rounded-xl border border-slate-700 max-w-sm">
+          <h3 className="text-white font-semibold mb-2">{selectedRoomData.name}</h3>
+          <div className="space-y-1 text-sm text-slate-300">
+            <p><span className="text-slate-400">Dimensions:</span> {selectedRoomData.originalMeasurements?.width} × {selectedRoomData.originalMeasurements?.depth}</p>
+            <p><span className="text-slate-400">Position:</span> [{selectedRoomData.position.map(p => p.toFixed(2)).join(', ')}]</p>
+            <p><span className="text-slate-400">Area:</span> {(selectedRoomData.dimensions[0] * selectedRoomData.dimensions[2]).toFixed(2)} m²</p>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <Button
+              onClick={() => {
+                setEditingRoom(selectedRoom);
+                setSelectedRoom(null);
+              }}
+              size="sm"
+              className="flex-1"
+            >
+              Edit Room
+            </Button>
+            <Button
+              onClick={() => setSelectedRoom(null)}
+              variant="secondary"
+              size="sm"
+              className="flex-1"
+            >
+              Close
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Edit Room Panel */}
+      {editingRoomData && (
+        <div className="absolute bottom-24 left-6 z-10 bg-slate-800/90 backdrop-blur-sm p-4 rounded-xl border border-slate-700 max-w-md">
+          <h3 className="text-white font-semibold mb-3">Edit {editingRoomData.name}</h3>
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Position X</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={editingRoomData.position[0].toFixed(2)}
+                  onChange={(e) => updateRoom(editingRoom!, {
+                    position: [parseFloat(e.target.value), editingRoomData.position[1], editingRoomData.position[2]]
+                  })}
+                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Position Z</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={editingRoomData.position[2].toFixed(2)}
+                  onChange={(e) => updateRoom(editingRoom!, {
+                    position: [editingRoomData.position[0], editingRoomData.position[1], parseFloat(e.target.value)]
+                  })}
+                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Height</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={editingRoomData.dimensions[1].toFixed(2)}
+                  onChange={(e) => updateRoom(editingRoom!, {
+                    dimensions: [editingRoomData.dimensions[0], parseFloat(e.target.value), editingRoomData.dimensions[2]]
+                  })}
+                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Width (m)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={editingRoomData.dimensions[0].toFixed(2)}
+                  onChange={(e) => updateRoom(editingRoom!, {
+                    dimensions: [parseFloat(e.target.value), editingRoomData.dimensions[1], editingRoomData.dimensions[2]]
+                  })}
+                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Depth (m)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={editingRoomData.dimensions[2].toFixed(2)}
+                  onChange={(e) => updateRoom(editingRoom!, {
+                    dimensions: [editingRoomData.dimensions[0], editingRoomData.dimensions[1], parseFloat(e.target.value)]
+                  })}
+                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">Color</label>
+              <input
+                type="color"
+                value={editingRoomData.color}
+                onChange={(e) => updateRoom(editingRoom!, { color: e.target.value })}
+                className="w-full h-8 rounded cursor-pointer"
+              />
+            </div>
+          </div>
+          <Button
+            onClick={() => setEditingRoom(null)}
+            className="mt-3 w-full"
+          >
+            Done Editing
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

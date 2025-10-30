@@ -18,33 +18,51 @@ serve(async (req) => {
       throw new Error('No image data provided');
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    const CLAUDE_API_KEY = Deno.env.get('Homely3D');
+    if (!CLAUDE_API_KEY) {
+      throw new Error('Claude API key not configured');
     }
 
-    console.log('Analyzing floorplan with AI...');
+    console.log('Analyzing floorplan with Claude AI...');
 
-    const systemPrompt = `You are a floorplan analysis expert. Analyze the provided 2D floorplan image and extract precise room information.
+    const systemPrompt = `You are an expert architectural analyst specializing in 2D floorplan interpretation and 3D spatial reconstruction.
 
-CRITICAL INSTRUCTIONS:
-1. Extract ALL room measurements from text labels (e.g., "7.16m x 3.30m")
-2. Identify room names (Entrance Hall, Kitchen, Bedroom, etc.)
-3. Calculate 3D positions based on spatial relationships
-4. Use coordinate system: X = left-to-right, Z = front-to-back, Y = 0 (floor level)
-5. Position values are CENTER points of each room in meters
-6. Start with Entrance Hall at origin [0, 0, 0]
-7. Calculate adjacent room positions using: newX = baseX ± (baseWidth/2 + newWidth/2 + 0.1)
-8. Wall thickness = 0.1m (add between adjacent rooms)
-9. All measurements in METERS
+ANALYSIS WORKFLOW:
+Step 1: MEASUREMENT EXTRACTION
+- Identify all room labels and their dimensions (e.g., "7.16m x 3.30m")
+- Extract room names (Kitchen, Bedroom, Living Room, etc.)
+- Note the total property area if labeled
+- Record ceiling height if mentioned
 
-OUTPUT REQUIREMENTS:
-Return a JSON object with this exact structure:
+Step 2: SPATIAL RELATIONSHIP MAPPING
+- Identify which rooms share walls (adjacency)
+- Locate doorways and openings between rooms
+- Determine the general layout pattern (linear, L-shaped, etc.)
+- Note the entry point (usually Entrance Hall or Reception)
+
+Step 3: 3D COORDINATE CALCULATION
+Coordinate system: X = left-to-right, Y = vertical (height), Z = front-to-back (depth)
+- Start with the entrance/reception room at origin [0, 0, 0]
+- For each adjacent room, calculate position using:
+  * If room is to the RIGHT: newX = baseX + (baseWidth/2) + 0.1 + (newWidth/2)
+  * If room is to the LEFT: newX = baseX - (baseWidth/2) - 0.1 - (newWidth/2)
+  * If room is BEHIND: newZ = baseZ + (baseDepth/2) + 0.1 + (newDepth/2)
+  * If room is IN FRONT: newZ = baseZ - (baseDepth/2) - 0.1 - (newDepth/2)
+  * Wall thickness = 0.1m (always add between rooms)
+- Ensure connected rooms actually touch at their shared walls
+
+Step 4: VALIDATION
+- Verify no rooms overlap
+- Check that total area matches sum of room areas
+- Confirm all adjacent rooms share wall coordinates
+
+OUTPUT FORMAT:
+Return ONLY valid JSON (no markdown, no explanation):
 {
-  "id": "extracted-address",
-  "address": "full address from image",
-  "totalAreaSqFt": number (sum all room areas in sq ft),
-  "totalAreaSqM": number (sum all room areas in sq m),
+  "id": "address-or-property-name",
+  "address": "Full address from image",
+  "totalAreaSqFt": <sum of all room areas in sq ft>,
+  "totalAreaSqM": <sum of all room areas in sq m>,
   "ceilingHeight": 2.4,
   "rooms": [
     {
@@ -52,7 +70,7 @@ Return a JSON object with this exact structure:
       "name": "Room Name",
       "position": [x, 0, z],
       "dimensions": [width, 2.4, depth],
-      "color": "#hexcolor",
+      "color": "#<hex-color>",
       "originalMeasurements": {
         "width": "X.XXm",
         "depth": "X.XXm"
@@ -61,39 +79,43 @@ Return a JSON object with this exact structure:
   ]
 }
 
-VALIDATION RULES:
-- Sum of room areas must match declared total area
-- No rooms should overlap
-- All dimensions must be positive numbers
-- Position first room at [0, 0, 0]
-- Calculate other positions based on adjacency`;
+IMPORTANT RULES:
+- All measurements in METERS
+- Position values are CENTER points of rooms
+- Y-axis is always 0 for floor level
+- Room height is always ceilingHeight (default 2.4m)
+- Use distinct colors for each room
+- Ensure rooms form a connected layout (no floating rooms)`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'x-api-key': CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-pro',
+        model: 'claude-sonnet-4-5',
+        max_tokens: 4096,
         messages: [
           {
             role: 'user',
             content: [
               {
-                type: 'text',
-                text: systemPrompt
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: imageData.startsWith('data:image/png') ? 'image/png' : 'image/jpeg',
+                  data: imageData.split(',')[1]
+                }
               },
               {
-                type: 'image_url',
-                image_url: {
-                  url: imageData
-                }
+                type: 'text',
+                text: systemPrompt
               }
             ]
           }
-        ],
-        response_format: { type: "json_object" }
+        ]
       }),
     });
 
@@ -119,15 +141,23 @@ VALIDATION RULES:
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = data.content?.[0]?.text;
     
     if (!content) {
       throw new Error('No content in AI response');
     }
 
-    console.log('AI response received, parsing...');
+    console.log('Claude response received, parsing...');
     
-    const floorplanData = JSON.parse(content);
+    // Extract JSON from potential markdown code blocks
+    let jsonText = content;
+    if (content.includes('```json')) {
+      jsonText = content.split('```json')[1].split('```')[0].trim();
+    } else if (content.includes('```')) {
+      jsonText = content.split('```')[1].split('```')[0].trim();
+    }
+    
+    const floorplanData = JSON.parse(jsonText);
     
     console.log('Floorplan analysis complete:', {
       rooms: floorplanData.rooms?.length,

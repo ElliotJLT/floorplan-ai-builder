@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { FloorplanUpload } from "@/components/FloorplanUpload";
 import { FloorplanViewer3D } from "@/components/FloorplanViewer3D";
-import { FloorplanEditor } from "@/components/FloorplanEditor";
 import { FloorplanData } from "@/types/floorplan";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-type ViewState = "upload" | "analyzing" | "editing" | "viewing";
+type ViewState = "upload" | "analyzing" | "viewing";
 
 const Index = () => {
   const [viewState, setViewState] = useState<ViewState>("upload");
@@ -32,9 +31,9 @@ const Index = () => {
         throw new Error("No data returned from analysis");
       }
 
-      toast.success("Analysis complete! Review the results.");
+      toast.success("Analysis complete!");
       setFloorplanData(data);
-      setViewState("editing");
+      setViewState("viewing");
 
     } catch (error) {
       console.error('Error analyzing floorplan:', error);
@@ -44,23 +43,14 @@ const Index = () => {
     }
   };
 
-  const handleConfirmData = (data: FloorplanData) => {
+  const handleUpdateFloorplan = (data: FloorplanData) => {
     setFloorplanData(data);
-    setViewState("viewing");
   };
 
   const handleBack = () => {
-    if (viewState === "viewing") {
-      setViewState("editing");
-    } else if (viewState === "editing") {
-      setViewState("upload");
-      setUploadedImage(null);
-      setFloorplanData(null);
-    } else {
-      setViewState("upload");
-      setUploadedImage(null);
-      setFloorplanData(null);
-    }
+    setViewState("upload");
+    setUploadedImage(null);
+    setFloorplanData(null);
   };
 
   return (
@@ -73,18 +63,10 @@ const Index = () => {
         <div className="min-h-screen flex items-center justify-center bg-background">
           <div className="text-center space-y-4">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto" />
-            <h2 className="text-2xl font-semibold">Analyzing Floorplan...</h2>
-            <p className="text-muted-foreground">AI is extracting room dimensions and positions</p>
+            <h2 className="text-2xl font-semibold">Analyzing Floorplan with Claude...</h2>
+            <p className="text-muted-foreground">AI is extracting room dimensions and spatial positioning</p>
           </div>
         </div>
-      )}
-      
-      {viewState === "editing" && floorplanData && (
-        <FloorplanEditor
-          initialData={floorplanData}
-          onConfirm={handleConfirmData}
-          onBack={handleBack}
-        />
       )}
       
       {viewState === "viewing" && uploadedImage && floorplanData && (
@@ -92,6 +74,7 @@ const Index = () => {
           floorplanImage={uploadedImage}
           floorplanData={floorplanData}
           onBack={handleBack}
+          onUpdate={handleUpdateFloorplan}
         />
       )}
     </>
