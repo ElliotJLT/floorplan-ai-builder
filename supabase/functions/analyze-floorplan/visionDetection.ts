@@ -235,6 +235,9 @@ function calculateBoundingBox(points: Array<{x: number; y: number}>): {
  * Deno-native implementation using pure JavaScript/WASM libraries
  */
 export async function detectRoomBoundaries(imageData: string): Promise<RoomContour[]> {
+  console.log('⚠️ DIAGNOSTIC: detectRoomBoundaries function was called');
+  console.log('⚠️ DIAGNOSTIC: Image data length:', imageData.length);
+
   try {
     console.log('🔍 Starting computer vision room boundary detection (Deno-native)...');
 
