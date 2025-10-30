@@ -84,7 +84,68 @@ function binaryThreshold(gray: Uint8ClampedArray): Uint8ClampedArray {
 }
 
 /**
- * Simple edge detection (Sobel-like)
+ * Morphological closing operation to connect gaps in walls
+ */
+function morphologicalClose(binary: Uint8ClampedArray, width: number, height: number, kernelSize: number = 3): Uint8ClampedArray {
+  const dilated = morphologicalDilate(binary, width, height, kernelSize);
+  const closed = morphologicalErode(dilated, width, height, kernelSize);
+  return closed;
+}
+
+function morphologicalDilate(binary: Uint8ClampedArray, width: number, height: number, kernelSize: number): Uint8ClampedArray {
+  const result = new Uint8ClampedArray(binary.length);
+  const offset = Math.floor(kernelSize / 2);
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let maxVal = 0;
+      
+      for (let ky = -offset; ky <= offset; ky++) {
+        for (let kx = -offset; kx <= offset; kx++) {
+          const ny = y + ky;
+          const nx = x + kx;
+          
+          if (ny >= 0 && ny < height && nx >= 0 && nx < width) {
+            maxVal = Math.max(maxVal, binary[ny * width + nx]);
+          }
+        }
+      }
+      
+      result[y * width + x] = maxVal;
+    }
+  }
+  
+  return result;
+}
+
+function morphologicalErode(binary: Uint8ClampedArray, width: number, height: number, kernelSize: number): Uint8ClampedArray {
+  const result = new Uint8ClampedArray(binary.length);
+  const offset = Math.floor(kernelSize / 2);
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let minVal = 255;
+      
+      for (let ky = -offset; ky <= offset; ky++) {
+        for (let kx = -offset; kx <= offset; kx++) {
+          const ny = y + ky;
+          const nx = x + kx;
+          
+          if (ny >= 0 && ny < height && nx >= 0 && nx < width) {
+            minVal = Math.min(minVal, binary[ny * width + nx]);
+          }
+        }
+      }
+      
+      result[y * width + x] = minVal;
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Enhanced edge detection with multiple methods
  */
 function detectEdges(binary: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
   const edges = new Uint8ClampedArray(binary.length);
@@ -93,6 +154,7 @@ function detectEdges(binary: Uint8ClampedArray, width: number, height: number): 
     for (let x = 1; x < width - 1; x++) {
       const idx = y * width + x;
       
+      // Sobel operator
       const gx = 
         -binary[(y - 1) * width + (x - 1)] + binary[(y - 1) * width + (x + 1)] +
         -2 * binary[y * width + (x - 1)] + 2 * binary[y * width + (x + 1)] +
@@ -103,7 +165,9 @@ function detectEdges(binary: Uint8ClampedArray, width: number, height: number): 
         binary[(y + 1) * width + (x - 1)] + 2 * binary[(y + 1) * width + x] + binary[(y + 1) * width + (x + 1)];
 
       const magnitude = Math.sqrt(gx * gx + gy * gy);
-      edges[idx] = magnitude > 100 ? 255 : 0;
+      
+      // Lower threshold to detect more walls (including interior walls)
+      edges[idx] = magnitude > 60 ? 255 : 0;
     }
   }
 
@@ -217,21 +281,33 @@ export async function detectRoomBoundaries(imageDataUrl: string): Promise<{
   // CV pipeline
   const gray = toGrayscale(imageData);
   const binary = binaryThreshold(gray);
-  const edges = detectEdges(binary, canvas.width, canvas.height);
   
-  const minArea = Math.floor((canvas.width * canvas.height) * 0.005);
+  // Apply morphological closing to connect wall segments
+  console.log('Applying morphological operations...');
+  const closed = morphologicalClose(binary, canvas.width, canvas.height, 3);
+  
+  const edges = detectEdges(closed, canvas.width, canvas.height);
+  
+  const minArea = Math.floor((canvas.width * canvas.height) * 0.003); // More sensitive (0.3% instead of 0.5%)
   const components = findConnectedComponents(edges, canvas.width, canvas.height, minArea);
   
   console.log(`Found ${components.length} raw components`);
 
-  // Filter by reasonable size and aspect ratio
+  // Filter by reasonable size and aspect ratio with detailed logging
+  const imageArea = canvas.width * canvas.height;
   const filtered = components.filter(c => {
     const area = c.bbox.width * c.bbox.height;
-    const imageArea = canvas.width * canvas.height;
     const areaRatio = area / imageArea;
     const aspectRatio = Math.max(c.bbox.width, c.bbox.height) / Math.min(c.bbox.width, c.bbox.height);
     
-    return areaRatio >= 0.01 && areaRatio <= 0.6 && aspectRatio < 10;
+    const sizeOk = areaRatio >= 0.005 && areaRatio <= 0.7; // More lenient: 0.5% to 70%
+    const aspectOk = aspectRatio < 15; // More lenient aspect ratio
+    
+    if (!sizeOk || !aspectOk) {
+      console.log(`Filtered out: area=${(areaRatio * 100).toFixed(1)}% (${sizeOk ? 'OK' : 'FAIL'}), aspect=${aspectRatio.toFixed(1)} (${aspectOk ? 'OK' : 'FAIL'})`);
+    }
+    
+    return sizeOk && aspectOk;
   });
 
   console.log(`✅ Detected ${filtered.length} valid room boundaries`);
