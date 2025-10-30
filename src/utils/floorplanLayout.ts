@@ -278,29 +278,31 @@ function calculateAdjacentPosition(
 
 /**
  * Intelligent layout algorithm for UK flats
- * Places rooms based on type clustering and size hints
+ * Creates realistic, compact layouts based on room types and adjacency patterns
  */
 function arrangeInGrid(aiResponse: AIFloorplanResponse): FloorplanData {
-  const { rooms, ceilingHeight, entryRoomId } = aiResponse;
-  
+  const { rooms, ceilingHeight, entryRoomId, totalAreaSqM } = aiResponse;
+
+  console.log(`Creating intelligent grid layout for ${rooms.length} rooms (target area: ${totalAreaSqM}m²)`);
+
   // Categorize rooms by type
   const entryRoom = rooms.find(r => r.id === entryRoomId);
-  const receptionRooms = rooms.filter(r => 
-    r.name.toLowerCase().includes('reception') || 
+  const receptionRooms = rooms.filter(r =>
+    r.name.toLowerCase().includes('reception') ||
     r.name.toLowerCase().includes('living') ||
     r.name.toLowerCase().includes('lounge')
   );
   const bedrooms = rooms.filter(r => r.name.toLowerCase().includes('bedroom'));
-  const bathrooms = rooms.filter(r => 
-    r.name.toLowerCase().includes('bathroom') || 
+  const bathrooms = rooms.filter(r =>
+    r.name.toLowerCase().includes('bathroom') ||
     r.name.toLowerCase().includes('wc')
   );
   const kitchen = rooms.find(r => r.name.toLowerCase().includes('kitchen'));
-  const hallways = rooms.filter(r => 
-    r.name.toLowerCase().includes('hall') && 
+  const hallways = rooms.filter(r =>
+    r.name.toLowerCase().includes('hall') &&
     r.id !== entryRoomId
   );
-  
+
   // Remaining rooms
   const categorized = new Set([
     entryRoomId,
@@ -311,14 +313,36 @@ function arrangeInGrid(aiResponse: AIFloorplanResponse): FloorplanData {
     ...hallways.map(r => r.id)
   ]);
   const otherRooms = rooms.filter(r => !categorized.has(r.id));
-  
+
   const finalRooms: Room[] = [];
+
+  // Calculate total room area and compare to target
+  const calculatedArea = rooms.reduce((sum, r) => sum + (r.width * r.depth), 0);
+  const areaRatio = calculatedArea / totalAreaSqM;
+
+  if (areaRatio > 1.1) {
+    console.warn(`Calculated room area (${calculatedArea.toFixed(2)}m²) exceeds target (${totalAreaSqM}m²) by ${((areaRatio - 1) * 100).toFixed(1)}%`);
+  }
+
+  // Calculate optimal layout width (aim for roughly rectangular overall shape)
+  const targetRatio = 1.5; // Width:Depth ratio for typical flat
+  const optimalWidth = Math.sqrt(totalAreaSqM * targetRatio);
+
   let currentX = 0;
   let currentZ = 0;
   let maxRowHeight = 0;
-  
-  // Helper to place a room
-  const placeRoom = (room: ParsedRoomData) => {
+  let currentRowWidth = 0;
+
+  // Helper to place a room with improved positioning
+  const placeRoom = (room: ParsedRoomData, forceNewRow: boolean = false) => {
+    // Check if we should start a new row
+    if (forceNewRow || (currentRowWidth + room.width > optimalWidth && finalRooms.length > 0)) {
+      currentX = 0;
+      currentZ += maxRowHeight + WALL_THICKNESS;
+      maxRowHeight = 0;
+      currentRowWidth = 0;
+    }
+
     finalRooms.push({
       id: room.id,
       name: room.name,
@@ -327,45 +351,82 @@ function arrangeInGrid(aiResponse: AIFloorplanResponse): FloorplanData {
       color: room.color,
       originalMeasurements: room.originalMeasurements
     });
-    
+
     currentX += room.width + WALL_THICKNESS;
+    currentRowWidth += room.width + WALL_THICKNESS;
     maxRowHeight = Math.max(maxRowHeight, room.depth);
   };
-  
-  const nextRow = () => {
-    currentX = 0;
-    currentZ += maxRowHeight + WALL_THICKNESS;
-    maxRowHeight = 0;
-  };
-  
-  // Layout strategy: Entry → Reception → Kitchen | Bedrooms → Bathrooms
-  
-  // Row 1: Entry + Reception rooms (front of flat)
-  if (entryRoom) placeRoom(entryRoom);
-  receptionRooms.forEach(placeRoom);
-  if (receptionRooms.length === 0 && kitchen) placeRoom(kitchen);
-  
-  // Row 2: Kitchen (if not placed) + Bedrooms
-  nextRow();
-  if (receptionRooms.length > 0 && kitchen) placeRoom(kitchen);
-  bedrooms.slice(0, 2).forEach(placeRoom);
-  
-  // Row 3: More bedrooms + Bathrooms
-  if (bedrooms.length > 2) {
-    nextRow();
-    bedrooms.slice(2).forEach(placeRoom);
-    bathrooms.forEach(placeRoom);
-  } else if (bathrooms.length > 0) {
-    bathrooms.forEach(placeRoom);
+
+  // Enhanced layout strategy following UK flat conventions:
+  // 1. Entry/hall at front
+  // 2. Living spaces adjacent to entry
+  // 3. Kitchen near living spaces
+  // 4. Bedrooms in a separate zone
+  // 5. Bathrooms near bedrooms
+
+  // Place entry room first
+  if (entryRoom) {
+    placeRoom(entryRoom);
   }
-  
-  // Row 4: Hallways and other rooms
-  if (hallways.length > 0 || otherRooms.length > 0) {
-    nextRow();
-    hallways.forEach(placeRoom);
-    otherRooms.forEach(placeRoom);
+
+  // Place reception rooms adjacent to entry (same row if space allows)
+  receptionRooms.forEach((room, idx) => {
+    placeRoom(room, idx > 0 && receptionRooms[idx - 1].width > optimalWidth * 0.6);
+  });
+
+  // Place kitchen on the same row if space allows, or start new row
+  if (kitchen) {
+    const shouldStartNewRow = currentRowWidth > optimalWidth * 0.7;
+    placeRoom(kitchen, shouldStartNewRow);
   }
-  
+
+  // Place hallways to connect spaces
+  hallways.forEach((hall, idx) => {
+    // Hallways typically run along one edge
+    const shouldStartNewRow = idx === 0 && currentRowWidth > optimalWidth * 0.5;
+    placeRoom(hall, shouldStartNewRow);
+  });
+
+  // Start bedroom zone (force new row for clear separation)
+  if (bedrooms.length > 0) {
+    bedrooms.forEach((bedroom, idx) => {
+      // First bedroom starts new row, others flow naturally
+      const shouldStartNewRow = idx === 0;
+      placeRoom(bedroom, shouldStartNewRow);
+    });
+  }
+
+  // Place bathrooms adjacent to bedrooms
+  bathrooms.forEach((bathroom, idx) => {
+    // Try to keep bathrooms on same row as bedrooms
+    const shouldStartNewRow = currentRowWidth > optimalWidth * 0.9;
+    placeRoom(bathroom, shouldStartNewRow);
+  });
+
+  // Place any remaining rooms
+  otherRooms.forEach((room) => {
+    placeRoom(room);
+  });
+
+  // Calculate layout bounds
+  const bounds = finalRooms.reduce((acc, room) => {
+    const [x, , z] = room.position;
+    const [w, , d] = room.dimensions;
+    return {
+      minX: Math.min(acc.minX, x - w / 2),
+      maxX: Math.max(acc.maxX, x + w / 2),
+      minZ: Math.min(acc.minZ, z - d / 2),
+      maxZ: Math.max(acc.maxZ, z + d / 2)
+    };
+  }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity });
+
+  const layoutWidth = bounds.maxX - bounds.minX;
+  const layoutDepth = bounds.maxZ - bounds.minZ;
+  const actualRatio = layoutWidth / layoutDepth;
+
+  console.log(`Layout complete: ${layoutWidth.toFixed(2)}m × ${layoutDepth.toFixed(2)}m (ratio: ${actualRatio.toFixed(2)})`);
+  console.log(`Area utilization: ${((calculatedArea / totalAreaSqM) * 100).toFixed(1)}%`);
+
   return {
     id: aiResponse.id,
     address: aiResponse.address,

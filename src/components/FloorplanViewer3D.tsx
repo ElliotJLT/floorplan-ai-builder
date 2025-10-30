@@ -8,21 +8,122 @@ import { Room as RoomType, FloorplanData } from "@/types/floorplan";
 import { validateLayout } from "@/utils/floorplanLayout";
 import { toast } from "sonner";
 
-const Room3D = ({ 
-  room, 
-  isSelected, 
-  onSelect, 
+// Collision and snapping constants
+const WALL_THICKNESS = 0.1;
+const SNAP_THRESHOLD = 0.3; // meters
+const COLLISION_TOLERANCE = 0.05; // Allow slight overlap for walls
+
+/**
+ * Check if two rooms would collide at given position
+ */
+const checkCollision = (
+  roomDimensions: [number, number, number],
+  newPosition: [number, number, number],
+  otherRoom: RoomType
+): boolean => {
+  const [w1, , d1] = roomDimensions;
+  const [x1, , z1] = newPosition;
+
+  const [w2, , d2] = otherRoom.dimensions;
+  const [x2, , z2] = otherRoom.position;
+
+  // Calculate bounding boxes
+  const box1 = {
+    left: x1 - w1 / 2,
+    right: x1 + w1 / 2,
+    back: z1 - d1 / 2,
+    front: z1 + d1 / 2
+  };
+
+  const box2 = {
+    left: x2 - w2 / 2,
+    right: x2 + w2 / 2,
+    back: z2 - d2 / 2,
+    front: z2 + d2 / 2
+  };
+
+  // Check for overlap with tolerance for wall thickness
+  const xOverlap = box1.left < box2.right - COLLISION_TOLERANCE &&
+                   box1.right > box2.left + COLLISION_TOLERANCE;
+  const zOverlap = box1.back < box2.front - COLLISION_TOLERANCE &&
+                   box1.front > box2.back + COLLISION_TOLERANCE;
+
+  return xOverlap && zOverlap;
+};
+
+/**
+ * Find nearest wall snap position
+ */
+const findWallSnap = (
+  roomDimensions: [number, number, number],
+  newPosition: [number, number, number],
+  otherRoom: RoomType
+): [number, number, number] | null => {
+  const [w1, , d1] = roomDimensions;
+  const [x1, , z1] = newPosition;
+
+  const [w2, , d2] = otherRoom.dimensions;
+  const [x2, , z2] = otherRoom.position;
+
+  // Calculate distances to all four walls
+  const snaps: Array<{ pos: [number, number, number]; distance: number }> = [];
+
+  // North wall (other room's front edge)
+  const northZ = z2 + d2 / 2 + d1 / 2 + WALL_THICKNESS;
+  const northDist = Math.abs(z1 - northZ);
+  if (northDist < SNAP_THRESHOLD && Math.abs(x1 - x2) < (w1 + w2) / 2) {
+    snaps.push({ pos: [x1, 0, northZ], distance: northDist });
+  }
+
+  // South wall (other room's back edge)
+  const southZ = z2 - d2 / 2 - d1 / 2 - WALL_THICKNESS;
+  const southDist = Math.abs(z1 - southZ);
+  if (southDist < SNAP_THRESHOLD && Math.abs(x1 - x2) < (w1 + w2) / 2) {
+    snaps.push({ pos: [x1, 0, southZ], distance: southDist });
+  }
+
+  // East wall (other room's right edge)
+  const eastX = x2 + w2 / 2 + w1 / 2 + WALL_THICKNESS;
+  const eastDist = Math.abs(x1 - eastX);
+  if (eastDist < SNAP_THRESHOLD && Math.abs(z1 - z2) < (d1 + d2) / 2) {
+    snaps.push({ pos: [eastX, 0, z1], distance: eastDist });
+  }
+
+  // West wall (other room's left edge)
+  const westX = x2 - w2 / 2 - w1 / 2 - WALL_THICKNESS;
+  const westDist = Math.abs(x1 - westX);
+  if (westDist < SNAP_THRESHOLD && Math.abs(z1 - z2) < (d1 + d2) / 2) {
+    snaps.push({ pos: [westX, 0, z1], distance: westDist });
+  }
+
+  // Return the closest snap position
+  if (snaps.length > 0) {
+    snaps.sort((a, b) => a.distance - b.distance);
+    return snaps[0].pos;
+  }
+
+  return null;
+};
+
+const Room3D = ({
+  room,
+  isSelected,
+  onSelect,
   onDragEnd,
-  isDragging 
-}: { 
-  room: RoomType; 
-  isSelected: boolean; 
+  isDragging,
+  allRooms
+}: {
+  room: RoomType;
+  isSelected: boolean;
   onSelect: () => void;
   onDragEnd: (newPosition: [number, number, number]) => void;
   isDragging: boolean;
+  allRooms: RoomType[];
 }) => {
   const [hovered, setHovered] = useState(false);
   const [dragStart, setDragStart] = useState<THREE.Vector3 | null>(null);
+  const [collision, setCollision] = useState(false);
+  const [snapped, setSnapped] = useState(false);
   const meshRef = useRef<THREE.Mesh>(null);
   const [width, height, depth] = room.dimensions;
 
@@ -40,29 +141,76 @@ const Room3D = ({
   const handlePointerMove = (e: any) => {
     if (!dragStart || !isSelected) return;
     e.stopPropagation();
-    
+
     const point = e.point.clone();
     point.y = 0;
-    const newPos = point.sub(dragStart);
-    
+    let newPos = point.sub(dragStart);
+
     // Snap to grid (0.1m)
     const snapSize = 0.1;
     newPos.x = Math.round(newPos.x / snapSize) * snapSize;
     newPos.z = Math.round(newPos.z / snapSize) * snapSize;
-    
-    onDragEnd([newPos.x, 0, newPos.z]);
+
+    const candidatePos: [number, number, number] = [newPos.x, 0, newPos.z];
+
+    // Get other rooms (excluding this one)
+    const otherRooms = allRooms.filter(r => r.id !== room.id);
+
+    // Check for collisions
+    let hasCollision = false;
+    for (const otherRoom of otherRooms) {
+      if (checkCollision(room.dimensions, candidatePos, otherRoom)) {
+        hasCollision = true;
+        break;
+      }
+    }
+
+    // If collision detected, don't move
+    if (hasCollision) {
+      setCollision(true);
+      setSnapped(false);
+      return;
+    }
+
+    setCollision(false);
+
+    // Check for wall snapping
+    let snappedPos: [number, number, number] | null = null;
+    for (const otherRoom of otherRooms) {
+      const snap = findWallSnap(room.dimensions, candidatePos, otherRoom);
+      if (snap) {
+        // Verify snap position doesn't cause collision
+        const wouldCollide = otherRooms.some(r =>
+          r.id !== otherRoom.id && checkCollision(room.dimensions, snap, r)
+        );
+        if (!wouldCollide) {
+          snappedPos = snap;
+          break;
+        }
+      }
+    }
+
+    if (snappedPos) {
+      setSnapped(true);
+      onDragEnd(snappedPos);
+    } else {
+      setSnapped(false);
+      onDragEnd(candidatePos);
+    }
   };
 
   const handlePointerUp = () => {
     setDragStart(null);
+    setCollision(false);
+    setSnapped(false);
   };
 
   return (
     <group position={room.position}>
       {/* Floor */}
-      <mesh 
+      <mesh
         ref={meshRef}
-        rotation={[-Math.PI / 2, 0, 0]} 
+        rotation={[-Math.PI / 2, 0, 0]}
         position={[0, 0, 0]}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
@@ -71,8 +219,14 @@ const Room3D = ({
         onPointerUp={handlePointerUp}
       >
         <planeGeometry args={[width, depth]} />
-        <meshStandardMaterial 
-          color={isSelected ? "#3b82f6" : hovered ? "#14b8a6" : room.color}
+        <meshStandardMaterial
+          color={
+            collision ? "#ef4444" : // Red for collision
+            snapped ? "#10b981" : // Green for snap
+            isSelected ? "#3b82f6" :
+            hovered ? "#14b8a6" :
+            room.color
+          }
           side={THREE.DoubleSide}
           transparent
           opacity={isDragging ? 0.6 : 0.9}
@@ -255,9 +409,10 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
 
         {/* Rooms */}
         {localData.rooms.map((room) => (
-          <Room3D 
-            key={room.id} 
+          <Room3D
+            key={room.id}
             room={room}
+            allRooms={localData.rooms}
             isSelected={selectedRoom === room.id}
             onSelect={() => setSelectedRoom(room.id)}
             onDragEnd={(newPosition) => {

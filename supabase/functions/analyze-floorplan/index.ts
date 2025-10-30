@@ -115,7 +115,14 @@ CRITICAL RULES:
 - totalAreaSqM and totalAreaSqFt must match room dimensions
 - entryRoomId must match one of the room IDs
 - labelPosition is REQUIRED for each room - estimate pixel coordinates carefully
-- DO NOT include adjacency data - spatial relationships will be calculated separately`;
+- DO NOT include adjacency data - spatial relationships will be calculated separately
+
+DUPLICATE PREVENTION:
+- Each room should appear ONLY ONCE in the rooms array
+- If a space serves multiple purposes (e.g., "Kitchen/Dining Room"), use the primary function name
+- DO NOT create separate entries for combined spaces
+- Example: "Kitchen/Dining Room" → use id: "kitchen", name: "Kitchen/Dining Room"
+- Common duplicates to avoid: Kitchen + Dining Room, Living + Reception, Bathroom + WC (unless genuinely separate rooms)`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -189,6 +196,26 @@ CRITICAL RULES:
 
     const claudeData = JSON.parse(jsonText);
     console.log(`✓ Extracted ${claudeData.rooms?.length} room labels from Claude`);
+
+    // Post-process: Remove duplicate rooms
+    const seenNames = new Set<string>();
+    const originalCount = claudeData.rooms.length;
+    claudeData.rooms = claudeData.rooms.filter((room: any) => {
+      // Normalize room name for comparison (lowercase, remove non-alphanumeric)
+      const normalized = room.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      if (seenNames.has(normalized)) {
+        console.warn(`⚠ Duplicate room detected and removed: ${room.name}`);
+        return false;
+      }
+
+      seenNames.add(normalized);
+      return true;
+    });
+
+    if (originalCount !== claudeData.rooms.length) {
+      console.log(`✓ Removed ${originalCount - claudeData.rooms.length} duplicate room(s)`);
+    }
 
     // ========================================================================
     // STAGE 3: Matching Algorithm - Connect Semantics to Geometry
