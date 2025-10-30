@@ -99,24 +99,55 @@ When you have determined all adjacencies, return your final answer as a JSON arr
       iterations++;
       console.log(`Agentic iteration ${iterations}...`);
 
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
-          max_tokens: 1024,
-          tools: toolDefinitions,
-          messages: messages
-        }),
-      });
+      // Rate limiting: Add delay between iterations to avoid 429 errors
+      // Claude API limit: 30,000 tokens/minute
+      if (iterations > 1) {
+        const delayMs = 800; // 800ms between iterations = ~75 iterations/min max
+        console.log(`⏱️  Rate limit delay: ${delayMs}ms`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Agent API error:', response.status, errorText);
+      // Retry logic for rate limit errors (429)
+      let response: Response | null = null;
+      let retryAttempts = 0;
+      const MAX_RETRIES = 3;
+
+      while (retryAttempts <= MAX_RETRIES) {
+        response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-5',
+            max_tokens: 1024,
+            tools: toolDefinitions,
+            messages: messages
+          }),
+        });
+
+        // Check if we got rate limited
+        if (response.status === 429 && retryAttempts < MAX_RETRIES) {
+          retryAttempts++;
+          const backoffMs = Math.pow(2, retryAttempts) * 1000; // 2s, 4s, 8s
+          console.warn(`⚠️  Rate limited (429) - retry ${retryAttempts}/${MAX_RETRIES} in ${backoffMs}ms`);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+          continue;
+        }
+
+        // Success or non-429 error - break retry loop
+        break;
+      }
+
+      if (!response || !response.ok) {
+        const errorText = response ? await response.text() : 'No response';
+        console.error(`❌ Agent API error: ${response?.status || 'unknown'} - ${errorText}`);
+        if (response?.status === 429) {
+          console.error('💥 RATE LIMIT: Exceeded Claude API rate limit even after retries');
+          console.error('   Consider: Reducing message history or increasing delays between iterations');
+        }
         break;
       }
 
@@ -209,6 +240,15 @@ When you have determined all adjacencies, return your final answer as a JSON arr
           role: 'user',
           content: toolResults
         });
+
+        // Optimize message history to reduce token usage and avoid rate limits
+        // Keep: system prompt (index 0) + last 6 messages (3 exchanges)
+        if (messages.length > 7) {
+          const systemPrompt = messages[0];
+          const recentMessages = messages.slice(-6);
+          messages = [systemPrompt, ...recentMessages];
+          console.log(`🗜️  Trimmed message history to ${messages.length} messages (reduced token usage)`);
+        }
 
       } else if (data.stop_reason === 'max_tokens') {
         console.warn('Agent hit max tokens limit');
