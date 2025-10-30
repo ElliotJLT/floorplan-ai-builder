@@ -64,6 +64,16 @@ export default {
           500: "hsl(var(--teal-500))",
           600: "hsl(var(--teal-600))",
         },
+        "gold-warm": "hsl(var(--gold-warm))",
+        "brown-deep": "hsl(var(--brown-deep))",
+        "blue-dusk": "hsl(var(--blue-dusk))",
+        "cream-light": "hsl(var(--cream-light))",
+        "navy-rich": "hsl(var(--navy-rich))",
+      },
+      fontFamily: {
+        'playfair': ['Playfair Display', 'serif'],
+        'garamond': ['EB Garamond', 'serif'],
+        'inter': ['Inter', 'sans-serif'],
       },
       boxShadow: {
         sm: "var(--shadow-sm)",

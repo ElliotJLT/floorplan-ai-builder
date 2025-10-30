@@ -1,8 +1,26 @@
-import { useState, useCallback, useRef } from "react";
-import { Upload, FileImage } from "lucide-react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { Upload, FileImage, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import heroBackground from "@/assets/hero-background-autumn.png";
+
+const buildingMessages = [
+  "Summoning the architectural spirits...",
+  "Bribing the construction gnomes...",
+  "Teaching walls where to stand...",
+  "Convincing rooms to cooperate...",
+  "Inflating balloons... wait, wrong kind of building...",
+  "Measuring twice, cutting once (the digital way)...",
+  "Assembling tiny digital bricks...",
+  "Persuading doors to be door-shaped...",
+  "Negotiating with stubborn windows...",
+  "Making sure the toilet knows it's a toilet...",
+  "Applying industrial-strength floor polish...",
+  "Training the balcony to not fall off...",
+  "Installing imaginary plumbing...",
+  "Adding that new home smell (digitally)...",
+  "Finalizing the architectural masterpiece..."
+];
 
 interface FloorplanUploadProps {
   onFloorplanUploaded: (imageData: string) => void;
@@ -14,8 +32,25 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
   const [isDragging, setIsDragging] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [additionalImages, setAdditionalImages] = useState<(string | null)[]>([null, null, null]);
+  const [buildingMessage, setBuildingMessage] = useState(buildingMessages[0]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const additionalInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Cycle through building messages while analyzing
+  useEffect(() => {
+    if (!isAnalyzing) {
+      setBuildingMessage(buildingMessages[0]);
+      return;
+    }
+
+    let messageIndex = 0;
+    const interval = setInterval(() => {
+      messageIndex = (messageIndex + 1) % buildingMessages.length;
+      setBuildingMessage(buildingMessages[messageIndex]);
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isAnalyzing]);
   
   // Compress oversized images before sending to the backend to avoid timeouts/413s
   const compressImage = useCallback(async (file: File): Promise<string> => {
@@ -46,7 +81,10 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
     const ctx = canvas.getContext('2d');
     if (!ctx) return dataUrl;
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', QUALITY);
+    
+    // Preserve PNG format if original was PNG (better for floorplan linework)
+    const isPng = file.type === 'image/png';
+    return canvas.toDataURL(isPng ? 'image/png' : 'image/jpeg', QUALITY);
   }, []);
 
   const handleFile = useCallback(async (file: File) => {
@@ -122,8 +160,23 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
       </div>
 
       {/* Content */}
-      <div className="relative z-10 min-h-screen flex flex-col justify-center px-4 sm:px-6 md:px-12 lg:px-24 py-20 md:py-16">
-        <div className="max-w-3xl w-full">
+      <div className="relative z-10 min-h-screen flex flex-col px-4 sm:px-6 md:px-12 lg:px-24 py-12 md:py-16">
+        <div className="max-w-7xl w-full">
+          {/* Back Button - Top Left */}
+          {preview && !isAnalyzing && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setPreview(null);
+                setAdditionalImages([null, null, null]);
+              }}
+              className="mb-6 text-white hover:bg-white/10"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          )}
+
           {/* Hero Text */}
           <div className="mb-8 md:mb-12 space-y-4 md:space-y-6">
             <h1 className="text-4xl sm:text-5xl md:text-7xl font-serif font-normal text-white leading-tight">
@@ -158,35 +211,109 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
                 <div className="flex items-center gap-3 md:gap-4">
                   <div className="animate-spin rounded-full h-6 w-6 md:h-8 md:w-8 border-b-2 border-white flex-shrink-0" />
                   <div>
-                    <h3 className="text-lg md:text-xl font-medium text-white">Analyzing floorplan...</h3>
-                    <p className="text-xs md:text-sm text-white/70">AI is extracting room dimensions and generating 3D layout</p>
+                    <h3 className="text-lg md:text-xl font-medium text-white">{buildingMessage}</h3>
+                    <p className="text-xs md:text-sm text-white/70">This might take a moment...</p>
                   </div>
                 </div>
               </div>
             ) : preview ? (
               <div className="space-y-6">
-                {/* Back button */}
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setPreview(null);
-                    setAdditionalImages([null, null, null]);
-                  }}
-                  className="text-white hover:bg-white/10 -ml-2"
-                >
-                  ← Back
-                </Button>
-
-                {/* Main floorplan preview */}
+                {/* Main floorplan preview - Desktop: horizontal, Mobile: vertical */}
                 <div className="space-y-4">
                   <h3 className="text-lg md:text-xl font-medium text-white">Main Floorplan</h3>
-                  <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-3 md:p-4 w-full max-w-xs">
-                    <img 
-                      src={preview} 
-                      alt="Floorplan preview" 
-                      className="w-full h-auto rounded-lg"
-                    />
+                  
+                  {/* Desktop: Horizontal Layout */}
+                  <div className="hidden md:flex gap-4 items-start">
+                    <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 flex-shrink-0">
+                      <img 
+                        src={preview} 
+                        alt="Floorplan preview" 
+                        className="w-80 h-auto rounded-lg"
+                      />
+                    </div>
+
+                    {/* Additional images - horizontal on desktop */}
+                    <div className="flex-1 space-y-4">
+                      <div>
+                        <h3 className="text-lg font-medium text-white mb-2">Additional Images (Optional)</h3>
+                        <p className="text-sm text-white/70 mb-3">Enhance the aesthetic with more property images</p>
+                      </div>
+                      
+                      <div className="flex gap-3">
+                        {additionalImages.map((img, idx) => (
+                          <div key={idx} className="flex-1">
+                            <input
+                              ref={el => additionalInputRefs.current[idx] = el}
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleAdditionalFile(file, idx);
+                              }}
+                              className="hidden"
+                            />
+                            <div
+                              onClick={() => additionalInputRefs.current[idx]?.click()}
+                              className="aspect-square bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg flex items-center justify-center cursor-pointer hover:bg-white/15 hover:border-white/30 transition-all overflow-hidden"
+                            >
+                              {img ? (
+                                <img src={img} alt={`Additional ${idx + 1}`} className="w-full h-full object-cover" />
+                              ) : (
+                                <Upload className="h-8 w-8 text-white/50" />
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Mobile: Vertical Layout */}
+                  <div className="md:hidden space-y-4">
+                    <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-3">
+                      <img 
+                        src={preview} 
+                        alt="Floorplan preview" 
+                        className="w-full h-auto rounded-lg"
+                      />
+                    </div>
+
+                    {/* Additional images section - below on mobile */}
+                    <div className="space-y-4">
+                      <div>
+                        <h3 className="text-lg font-medium text-white">Additional Images (Optional)</h3>
+                        <p className="text-xs text-white/70">Enhance the aesthetic with more property images</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-3 gap-2">
+                        {additionalImages.map((img, idx) => (
+                          <div key={idx}>
+                            <input
+                              ref={el => additionalInputRefs.current[idx] = el}
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleAdditionalFile(file, idx);
+                              }}
+                              className="hidden"
+                            />
+                            <div
+                              onClick={() => additionalInputRefs.current[idx]?.click()}
+                              className="aspect-square bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg flex items-center justify-center cursor-pointer hover:bg-white/15 hover:border-white/30 transition-all overflow-hidden"
+                            >
+                              {img ? (
+                                <img src={img} alt={`Additional ${idx + 1}`} className="w-full h-full object-cover" />
+                              ) : (
+                                <Upload className="h-6 w-6 text-white/50" />
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
                   <Button 
                     variant="outline" 
                     onClick={triggerFileSelect}
@@ -198,46 +325,13 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
                   </Button>
                 </div>
 
-                {/* Additional images section */}
-                <div className="space-y-4">
-                  <h3 className="text-lg md:text-xl font-medium text-white">Additional Images (Optional)</h3>
-                  <p className="text-xs md:text-sm text-white/70">Enhance the aesthetic with more property images</p>
-                  
-                  <div className="grid grid-cols-3 gap-2 md:gap-3 max-w-2xl">
-                    {additionalImages.map((img, idx) => (
-                      <div key={idx}>
-                        <input
-                          ref={el => additionalInputRefs.current[idx] = el}
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleAdditionalFile(file, idx);
-                          }}
-                          className="hidden"
-                        />
-                        <div
-                          onClick={() => additionalInputRefs.current[idx]?.click()}
-                          className="aspect-square bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg flex items-center justify-center cursor-pointer hover:bg-white/15 hover:border-white/30 transition-all overflow-hidden"
-                        >
-                          {img ? (
-                            <img src={img} alt={`Additional ${idx + 1}`} className="w-full h-full object-cover" />
-                          ) : (
-                            <Upload className="h-6 w-6 md:h-8 md:w-8 text-white/50" />
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Analyze button */}
+                {/* Start Building button */}
                 <Button
                   onClick={handleSubmit}
                   className="bg-white text-black hover:bg-white/90 px-8 font-medium w-full sm:w-auto"
                   size="lg"
                 >
-                  Analyze & Generate 3D
+                  Start Building
                 </Button>
               </div>
             ) : (

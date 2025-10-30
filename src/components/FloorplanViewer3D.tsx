@@ -225,54 +225,74 @@ const Room3D = ({
             snapped ? "#10b981" : // Green for snap
             isSelected ? "#3b82f6" :
             hovered ? "#14b8a6" :
-            room.color
+            "#E8E4D9" // Warm off-white
           }
           side={THREE.DoubleSide}
           transparent
           opacity={isDragging ? 0.6 : 0.9}
+          roughness={0.7}
+          metalness={0.1}
+          emissive="#2A2520"
+          emissiveIntensity={0.05}
         />
       </mesh>
 
-      {/* Walls */}
+      {/* Walls with warm tones */}
       <mesh position={[0, height / 2, -depth / 2]}>
         <boxGeometry args={[width, height, 0.1]} />
-        <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
+        <meshStandardMaterial color="#E8E4D9" opacity={0.85} transparent roughness={0.7} metalness={0.05} />
       </mesh>
       
       <mesh position={[0, height / 2, depth / 2]}>
         <boxGeometry args={[width, height, 0.1]} />
-        <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
+        <meshStandardMaterial color="#E8E4D9" opacity={0.85} transparent roughness={0.7} metalness={0.05} />
       </mesh>
       
       <mesh position={[-width / 2, height / 2, 0]}>
         <boxGeometry args={[0.1, height, depth]} />
-        <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
+        <meshStandardMaterial color="#E8E4D9" opacity={0.85} transparent roughness={0.7} metalness={0.05} />
       </mesh>
       
       <mesh position={[width / 2, height / 2, 0]}>
         <boxGeometry args={[0.1, height, depth]} />
-        <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
+        <meshStandardMaterial color="#E8E4D9" opacity={0.85} transparent roughness={0.7} metalness={0.05} />
       </mesh>
 
-      {/* Room label */}
+      {/* Room label background panel */}
+      <mesh position={[0, height + 0.3, 0]}>
+        <planeGeometry args={[Math.min(width - 0.2, room.name.length * 0.15 + 0.4), 0.35]} />
+        <meshBasicMaterial 
+          color="#000000" 
+          transparent 
+          opacity={0.3}
+          depthTest={false}
+        />
+      </mesh>
+
+      {/* Room label with refined styling */}
       <Text
-        position={[0, height + 0.3, 0]}
-        fontSize={0.25}
-        color="#334155"
+        position={[0, height + 0.3, 0.01]}
+        fontSize={0.19}
+        color="rgba(255, 255, 255, 0.95)"
         anchorX="center"
         anchorY="middle"
         maxWidth={width - 0.2}
+        letterSpacing={0.02}
+        fontWeight={500}
+        outlineWidth={0.01}
+        outlineColor="rgba(0, 0, 0, 0.4)"
       >
         {room.name}
       </Text>
 
-      {/* Dimensions label */}
+      {/* Dimensions label - smaller and lighter */}
       <Text
         position={[0, height - 0.2, 0]}
-        fontSize={0.12}
-        color="#64748b"
+        fontSize={0.17}
+        color="rgba(255, 255, 255, 0.7)"
         anchorX="center"
         anchorY="middle"
+        letterSpacing={0.02}
       >
         {width.toFixed(2)}m × {depth.toFixed(2)}m
       </Text>
@@ -329,17 +349,33 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
   };
 
   return (
-    <div className="relative w-full h-screen bg-slate-900">
-      {/* Top Bar */}
-      <div className="absolute top-0 left-0 right-0 z-10 p-4 bg-gradient-to-b from-slate-900/90 to-transparent">
+    <div className="relative w-full h-screen" style={{
+      background: 'linear-gradient(160deg, #8B7355 0%, #6B5D52 25%, #4A4339 50%, #2D2A27 75%, #1A1816 100%)'
+    }}>
+      {/* Top Bar with gradient overlay */}
+      <div className="absolute top-0 left-0 right-0 z-10 pt-8 pb-16 px-12" style={{
+        background: 'linear-gradient(to bottom, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0) 100%)',
+        backdropFilter: 'blur(20px)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+      }}>
+        {/* Subtle gradient fade at bottom */}
+        <div className="absolute bottom-0 left-0 right-0 h-[60px] pointer-events-none" style={{
+          background: 'linear-gradient(to bottom, transparent 0%, rgba(139, 115, 85, 0.1) 100%)'
+        }} />
+        
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-white">{floorplanData.address}</h2>
-            <p className="text-sm text-slate-300">
+            <h2 className="text-[2rem] font-playfair font-normal tracking-wide" style={{ color: '#F5F5DC' }}>
+              {floorplanData.address || 'Untitled Property'}
+            </h2>
+            <p className="text-[0.95rem] font-inter mt-1 font-normal tracking-wider" style={{ 
+              color: 'rgba(245, 245, 220, 0.6)',
+              letterSpacing: '0.03em'
+            }}>
               {floorplanData.rooms.filter(r => r.name.includes('Bedroom')).length} Bed Ground Floor Flat • {floorplanData.totalAreaSqFt} sq ft
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-3">
             <Button
               onClick={() => {
                 const validation = validateLayout(floorplanData);
@@ -363,21 +399,67 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
               }}
               variant={validation.isValid ? "secondary" : "destructive"}
               size="sm"
+              className="font-inter font-medium tracking-wider rounded-lg transition-all duration-200"
+              style={{
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1.5px solid rgba(255, 255, 255, 0.15)',
+                backdropFilter: 'blur(16px)',
+                color: '#F5F5DC',
+                letterSpacing: '0.025em',
+                padding: '0.65rem 1.25rem',
+                fontWeight: 500
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
             >
               {validation.isValid ? (
                 <>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  <CheckCircle2 className="mr-2 h-4 w-4" style={{ opacity: 0.9 }} />
                   Valid Layout
                 </>
               ) : (
                 <>
-                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  <AlertTriangle className="mr-2 h-4 w-4" style={{ opacity: 0.9 }} />
                   {validation.overlaps.length + validation.gaps.length} Issues
                 </>
               )}
             </Button>
-            <Button onClick={onBack} variant="secondary">
-              <Home className="mr-2 h-4 w-4" />
+            <Button 
+              onClick={onBack}
+              className="font-inter font-medium tracking-wider rounded-lg transition-all duration-200"
+              style={{
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1.5px solid rgba(255, 255, 255, 0.15)',
+                backdropFilter: 'blur(16px)',
+                color: '#F5F5DC',
+                letterSpacing: '0.025em',
+                padding: '0.65rem 1.25rem',
+                fontWeight: 500
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              <Home className="mr-2 h-4 w-4" style={{ opacity: 0.9 }} />
               Back to Upload
             </Button>
           </div>
@@ -417,16 +499,17 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
           maxPolarAngle={Math.PI / 2 - 0.1}
         />
 
-        {/* Lighting */}
-        <ambientLight intensity={0.6} />
+        {/* Warm architectural lighting */}
+        <ambientLight color="#FFE5B4" intensity={0.6} />
         <directionalLight
+          color="#FFF8E7"
           position={[10, 10, 5]}
-          intensity={1}
+          intensity={0.8}
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
         />
-        <directionalLight position={[-10, 10, -5]} intensity={0.5} />
+        <directionalLight color="#FFB347" position={[-5, 5, -5]} intensity={0.3} />
 
         {/* Rooms */}
         {localData.rooms.map((room) => (
@@ -477,26 +560,56 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
           );
         })}
 
-        {/* Ground plane */}
+        {/* Ground plane with radial gradient spotlight effect */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
           <planeGeometry args={[50, 50]} />
-          <meshStandardMaterial color="#1e293b" opacity={0.5} transparent />
+          <meshStandardMaterial 
+            color="#3A3530"
+            roughness={0.9}
+            metalness={0.1}
+            opacity={0.95}
+            transparent
+          />
         </mesh>
       </Canvas>
 
-      {/* Controls Info */}
+      {/* Controls Info - Enhanced instruction bar */}
       <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10">
-        <div className="bg-slate-800/90 backdrop-blur-sm px-6 py-4 rounded-xl border border-slate-700 shadow-xl">
-          <div className="flex items-center gap-6 text-sm text-slate-300">
+        <div className="px-8 py-4 rounded-lg font-inter text-[0.875rem] font-normal" style={{
+          background: 'rgba(26, 24, 22, 0.9)',
+          backdropFilter: 'blur(20px)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+          border: '1px solid rgba(255, 255, 255, 0.06)',
+          color: 'rgba(245, 245, 220, 0.75)'
+        }}>
+          <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <Move className="h-4 w-4" />
+              <Move className="h-4 w-4" style={{ opacity: 0.85 }} />
               <span>Select room → Drag to move • Scroll to zoom</span>
             </div>
             <Button
               onClick={handleReset}
               variant="ghost"
               size="sm"
-              className="text-slate-300 hover:text-white"
+              className="font-inter font-medium transition-all duration-200"
+              style={{
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1.5px solid rgba(255, 255, 255, 0.12)',
+                backdropFilter: 'blur(16px)',
+                color: 'rgba(245, 245, 220, 0.85)',
+                letterSpacing: '0.025em',
+                padding: '0.5rem 1rem',
+                fontWeight: 500,
+                borderRadius: '6px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+              }}
             >
               <RotateCcw className="mr-2 h-4 w-4" />
               Reset View
@@ -507,21 +620,52 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
 
       {/* Selected Room Panel */}
       {selectedRoomData && !editingRoom && (
-        <div className="absolute bottom-24 left-6 z-10 bg-slate-800/90 backdrop-blur-sm p-4 rounded-xl border border-slate-700 max-w-sm">
-          <h3 className="text-white font-semibold mb-2">{selectedRoomData.name}</h3>
-          <div className="space-y-1 text-sm text-slate-300">
-            <p><span className="text-slate-400">Dimensions:</span> {selectedRoomData.originalMeasurements?.width} × {selectedRoomData.originalMeasurements?.depth}</p>
-            <p><span className="text-slate-400">Position:</span> [{selectedRoomData.position.map(p => p.toFixed(2)).join(', ')}]</p>
-            <p><span className="text-slate-400">Area:</span> {(selectedRoomData.dimensions[0] * selectedRoomData.dimensions[2]).toFixed(2)} m²</p>
+        <div className="absolute bottom-24 left-6 z-10 p-6 rounded-lg border max-w-sm font-inter" style={{
+          background: 'rgba(20, 25, 35, 0.9)',
+          backdropFilter: 'blur(20px)',
+          borderColor: 'rgba(255, 255, 255, 0.08)',
+          color: '#F5F5DC'
+        }}>
+          <h3 className="font-garamond text-lg font-medium mb-3" style={{ color: '#F5F5DC', letterSpacing: '0.02em' }}>
+            {selectedRoomData.name}
+          </h3>
+          <div className="space-y-1 text-sm" style={{ color: 'rgba(245, 245, 220, 0.7)' }}>
+            <p>
+              <span style={{ color: 'rgba(245, 245, 220, 0.5)' }}>Dimensions:</span> {selectedRoomData.originalMeasurements?.width} × {selectedRoomData.originalMeasurements?.depth}
+            </p>
+            <p>
+              <span style={{ color: 'rgba(245, 245, 220, 0.5)' }}>Position:</span> [{selectedRoomData.position.map(p => p.toFixed(2)).join(', ')}]
+            </p>
+            <p>
+              <span style={{ color: 'rgba(245, 245, 220, 0.5)' }}>Area:</span> {(selectedRoomData.dimensions[0] * selectedRoomData.dimensions[2]).toFixed(2)} m²
+            </p>
           </div>
-          <div className="flex gap-2 mt-3">
+          <div className="flex gap-2 mt-4">
             <Button
               onClick={() => rotateRoom(selectedRoom!)}
               size="sm"
-              variant="outline"
-              className="flex-1"
+              className="flex-1 font-inter font-medium text-[0.85rem] transition-all duration-200 rounded-md"
+              style={{
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1.5px solid rgba(255, 255, 255, 0.12)',
+                backdropFilter: 'blur(16px)',
+                color: '#F5F5DC',
+                letterSpacing: '0.025em',
+                fontWeight: 500,
+                padding: '0.5rem 1rem'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
             >
-              <RotateCcw className="mr-2 h-4 w-4" />
+              <RotateCcw className="mr-2 h-4 w-4" style={{ opacity: 0.9 }} />
               Rotate
             </Button>
             <Button
@@ -530,14 +674,50 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
                 setSelectedRoom(null);
               }}
               size="sm"
-              className="flex-1"
+              className="flex-1 font-inter font-medium text-[0.85rem] transition-all duration-200 rounded-md"
+              style={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1.5px solid rgba(255, 255, 255, 0.18)',
+                backdropFilter: 'blur(16px)',
+                color: '#F5F5DC',
+                letterSpacing: '0.025em',
+                fontWeight: 500,
+                padding: '0.5rem 1rem'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.14)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
             >
               Edit
             </Button>
             <Button
               onClick={() => setSelectedRoom(null)}
-              variant="secondary"
               size="sm"
+              className="font-inter font-medium text-[0.85rem] transition-all duration-200 rounded-md"
+              style={{
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1.5px solid rgba(255, 255, 255, 0.08)',
+                backdropFilter: 'blur(16px)',
+                color: 'rgba(245, 245, 220, 0.6)',
+                letterSpacing: '0.025em',
+                fontWeight: 500,
+                padding: '0.5rem 1rem'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+              }}
             >
               Close
             </Button>
@@ -547,12 +727,19 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
 
       {/* Edit Room Panel */}
       {editingRoomData && (
-        <div className="absolute bottom-24 left-6 z-10 bg-slate-800/90 backdrop-blur-sm p-4 rounded-xl border border-slate-700 max-w-md">
-          <h3 className="text-white font-semibold mb-3">Edit {editingRoomData.name}</h3>
+        <div className="absolute bottom-24 left-6 z-10 p-6 rounded-lg border max-w-md font-inter" style={{
+          background: 'rgba(20, 25, 35, 0.9)',
+          backdropFilter: 'blur(20px)',
+          borderColor: 'rgba(255, 255, 255, 0.08)',
+          color: '#F5F5DC'
+        }}>
+          <h3 className="font-garamond text-lg font-medium mb-4" style={{ color: '#F5F5DC', letterSpacing: '0.02em' }}>
+            Edit {editingRoomData.name}
+          </h3>
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Position X</label>
+                <label className="text-xs block mb-1" style={{ color: 'rgba(245, 245, 220, 0.6)' }}>Position X</label>
                 <input
                   type="number"
                   step="0.1"
@@ -560,11 +747,16 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
                   onChange={(e) => updateRoom(editingRoom!, {
                     position: [parseFloat(e.target.value), editingRoomData.position[1], editingRoomData.position[2]]
                   })}
-                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                  className="w-full px-2 py-1 rounded text-sm"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: '#F5F5DC'
+                  }}
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Position Z</label>
+                <label className="text-xs block mb-1" style={{ color: 'rgba(245, 245, 220, 0.6)' }}>Position Z</label>
                 <input
                   type="number"
                   step="0.1"
@@ -572,11 +764,16 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
                   onChange={(e) => updateRoom(editingRoom!, {
                     position: [editingRoomData.position[0], editingRoomData.position[1], parseFloat(e.target.value)]
                   })}
-                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                  className="w-full px-2 py-1 rounded text-sm"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: '#F5F5DC'
+                  }}
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Height</label>
+                <label className="text-xs block mb-1" style={{ color: 'rgba(245, 245, 220, 0.6)' }}>Height</label>
                 <input
                   type="number"
                   step="0.1"
@@ -584,13 +781,18 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
                   onChange={(e) => updateRoom(editingRoom!, {
                     dimensions: [editingRoomData.dimensions[0], parseFloat(e.target.value), editingRoomData.dimensions[2]]
                   })}
-                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                  className="w-full px-2 py-1 rounded text-sm"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: '#F5F5DC'
+                  }}
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Width (m)</label>
+                <label className="text-xs block mb-1" style={{ color: 'rgba(245, 245, 220, 0.6)' }}>Width (m)</label>
                 <input
                   type="number"
                   step="0.1"
@@ -598,11 +800,16 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
                   onChange={(e) => updateRoom(editingRoom!, {
                     dimensions: [parseFloat(e.target.value), editingRoomData.dimensions[1], editingRoomData.dimensions[2]]
                   })}
-                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                  className="w-full px-2 py-1 rounded text-sm"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: '#F5F5DC'
+                  }}
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Depth (m)</label>
+                <label className="text-xs block mb-1" style={{ color: 'rgba(245, 245, 220, 0.6)' }}>Depth (m)</label>
                 <input
                   type="number"
                   step="0.1"
@@ -610,12 +817,17 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
                   onChange={(e) => updateRoom(editingRoom!, {
                     dimensions: [editingRoomData.dimensions[0], editingRoomData.dimensions[1], parseFloat(e.target.value)]
                   })}
-                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white"
+                  className="w-full px-2 py-1 rounded text-sm"
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    color: '#F5F5DC'
+                  }}
                 />
               </div>
             </div>
             <div>
-              <label className="text-xs text-slate-400 block mb-1">Color</label>
+              <label className="text-xs block mb-1" style={{ color: 'rgba(245, 245, 220, 0.6)' }}>Color</label>
               <input
                 type="color"
                 value={editingRoomData.color}
@@ -626,7 +838,26 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
           </div>
           <Button
             onClick={() => setEditingRoom(null)}
-            className="mt-3 w-full"
+            className="mt-4 w-full font-inter font-medium transition-all duration-200 rounded-md"
+            style={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1.5px solid rgba(255, 255, 255, 0.18)',
+              backdropFilter: 'blur(16px)',
+              color: '#F5F5DC',
+              letterSpacing: '0.025em',
+              fontWeight: 500,
+              padding: '0.65rem 1.25rem'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.14)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
           >
             Done Editing
           </Button>

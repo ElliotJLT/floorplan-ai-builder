@@ -509,6 +509,7 @@ function arrangeInGrid(aiResponse: AIFloorplanResponse): FloorplanData {
   const otherRooms = rooms.filter(r => !categorized.has(r.id));
 
   const finalRooms: Room[] = [];
+  const placedIds = new Set<string>();
 
   // Calculate total room area and compare to target
   const calculatedArea = rooms.reduce((sum, r) => sum + (r.width * r.depth), 0);
@@ -529,6 +530,12 @@ function arrangeInGrid(aiResponse: AIFloorplanResponse): FloorplanData {
 
   // Helper to place a room with improved positioning
   const placeRoom = (room: ParsedRoomData, forceNewRow: boolean = false) => {
+    // Skip if this room was already placed via another category (e.g., "Kitchen/Living Room")
+    if (placedIds.has(room.id)) {
+      console.warn(`Skipping duplicate placement for room id="${room.id}" (${room.name})`);
+      return;
+    }
+
     // Check if we should start a new row
     if (forceNewRow || (currentRowWidth + room.width > optimalWidth && finalRooms.length > 0)) {
       currentX = 0;
@@ -545,6 +552,8 @@ function arrangeInGrid(aiResponse: AIFloorplanResponse): FloorplanData {
       color: room.color,
       originalMeasurements: room.originalMeasurements
     });
+
+    placedIds.add(room.id);
 
     currentX += room.width + WALL_THICKNESS;
     currentRowWidth += room.width + WALL_THICKNESS;
