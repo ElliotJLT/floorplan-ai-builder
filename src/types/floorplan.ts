@@ -86,6 +86,11 @@ export interface ParsedRoomData {
   /** Depth in meters (Z-axis) */
   depth: number;
   color: string;
+  /** Pixel coordinates of the room label on the floorplan image (for CV matching) */
+  labelPosition?: {
+    x: number;
+    y: number;
+  };
   originalMeasurements?: {
     width: string;
     depth: string;
@@ -102,4 +107,42 @@ export interface AIFloorplanResponse {
   rooms: ParsedRoomData[];
   /** Optional adjacency data (no longer used in v1) */
   adjacency?: AdjacencyRelation[];
+}
+
+// ============================================================================
+// Computer Vision Types (for hybrid CV approach)
+// ============================================================================
+
+export interface RoomContour {
+  /** Bounding rectangle around the room */
+  bbox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  /** Center point of the room */
+  centroid: {
+    x: number;
+    y: number;
+  };
+  /** Area in pixels */
+  area: number;
+  /** Raw contour points (for advanced processing) */
+  points?: Array<{x: number; y: number}>;
+}
+
+export interface UnifiedRoomData extends ParsedRoomData {
+  /** Geometry from computer vision */
+  bbox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  centroid: {
+    x: number;
+    y: number;
+  };
+  areaPixels: number;
 }

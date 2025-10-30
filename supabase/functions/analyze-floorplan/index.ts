@@ -1,5 +1,8 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { detectRoomBoundaries } from './visionDetection.ts';
+import { matchRoomsToContours, generateSyntheticContours } from './matchRoomsToContours.ts';
+import { determineAdjacencyWithAgent, detectAdjacencyGeometric } from './agenticAdjacency.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,17 +26,35 @@ serve(async (req) => {
       throw new Error('Claude API key not configured');
     }
 
-    console.log('Analyzing floorplan with Claude AI...');
+    console.log('=== HYBRID CV + AGENTIC LLM FLOORPLAN ANALYSIS ===');
+    console.log('Starting multi-stage analysis pipeline...');
+
+    // ========================================================================
+    // STAGE 1: Computer Vision - Detect Room Boundaries
+    // ========================================================================
+    console.log('\n--- STAGE 1: Computer Vision Room Detection ---');
+    const contours = await detectRoomBoundaries(imageData);
+    console.log(`✓ Detected ${contours.length} room boundaries via CV`);
+
+    // ========================================================================
+    // STAGE 2: Claude Vision - Extract Semantic Labels
+    // ========================================================================
+    console.log('\n--- STAGE 2: Claude Semantic Extraction ---');
 
     const systemPrompt = `You are an expert at analyzing 2D architectural floorplans.
 
-Your task: Extract room names, dimensions, total area, and identify the entry room.
+Your task: Extract room names, dimensions, label positions, total area, and identify the entry room.
 
 INSTRUCTIONS:
 1. Identify all rooms with their dimensions
    - Measure width and depth in meters from the floorplan
    - Convert from feet/inches if needed (1 foot = 0.3048m)
    - Include original measurements as shown on plan
+   - IMPORTANT: Record the pixel coordinates where each room's label appears on the image
+     * Measure from the TOP-LEFT corner of the image
+     * x = horizontal position (0 = left edge)
+     * y = vertical position (0 = top edge)
+     * The label position should be where the room name text is located
 
 2. Calculate total floor area (in both sqFt and sqM)
 
@@ -61,6 +82,10 @@ Return ONLY valid JSON in this exact format:
       "width": 2.5,
       "depth": 1.8,
       "color": "#e5e7eb",
+      "labelPosition": {
+        "x": 450,
+        "y": 320
+      },
       "originalMeasurements": {
         "width": "2.50m",
         "depth": "1.80m"
@@ -72,6 +97,10 @@ Return ONLY valid JSON in this exact format:
       "width": 5.2,
       "depth": 3.8,
       "color": "#fef3c7",
+      "labelPosition": {
+        "x": 680,
+        "y": 250
+      },
       "originalMeasurements": {
         "width": "5.20m",
         "depth": "3.80m"
@@ -84,7 +113,9 @@ CRITICAL RULES:
 - Use lowercase IDs with hyphens (e.g., "entrance-hall", "bedroom-1")
 - Ensure all measurements are in meters
 - totalAreaSqM and totalAreaSqFt must match room dimensions
-- entryRoomId must match one of the room IDs`;
+- entryRoomId must match one of the room IDs
+- labelPosition is REQUIRED for each room - estimate pixel coordinates carefully
+- DO NOT include adjacency data - spatial relationships will be calculated separately`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -146,8 +177,8 @@ CRITICAL RULES:
       throw new Error('No content in AI response');
     }
 
-    console.log('Claude response received, parsing...');
-    
+    console.log('✓ Claude response received, parsing...');
+
     // Extract JSON from potential markdown code blocks
     let jsonText = content;
     if (content.includes('```json')) {
@@ -155,18 +186,89 @@ CRITICAL RULES:
     } else if (content.includes('```')) {
       jsonText = content.split('```')[1].split('```')[0].trim();
     }
-    
-    const floorplanData = JSON.parse(jsonText);
-    
-    console.log('Floorplan analysis complete:', {
-      rooms: floorplanData.rooms?.length,
-      totalArea: floorplanData.totalAreaSqM,
-      entryRoom: floorplanData.entryRoomId
+
+    const claudeData = JSON.parse(jsonText);
+    console.log(`✓ Extracted ${claudeData.rooms?.length} room labels from Claude`);
+
+    // ========================================================================
+    // STAGE 3: Matching Algorithm - Connect Semantics to Geometry
+    // ========================================================================
+    console.log('\n--- STAGE 3: Matching Labels to Contours ---');
+
+    let unifiedRooms;
+    if (contours.length > 0) {
+      unifiedRooms = matchRoomsToContours(claudeData.rooms, contours);
+      console.log(`✓ Successfully matched ${unifiedRooms.length}/${claudeData.rooms.length} rooms`);
+
+      // If matching failed for most rooms, use synthetic contours
+      if (unifiedRooms.length < claudeData.rooms.length * 0.5) {
+        console.warn('Matching rate too low, falling back to synthetic contours');
+        unifiedRooms = generateSyntheticContours(claudeData.rooms);
+      }
+    } else {
+      console.warn('No CV contours detected, using synthetic contours');
+      unifiedRooms = generateSyntheticContours(claudeData.rooms);
+    }
+
+    // ========================================================================
+    // STAGE 4: Agentic Verification - Determine Adjacency with AI Reasoning
+    // ========================================================================
+    console.log('\n--- STAGE 4: Agentic Adjacency Verification ---');
+
+    let adjacency;
+    try {
+      adjacency = await determineAdjacencyWithAgent(unifiedRooms, CLAUDE_API_KEY);
+      console.log(`✓ Agent determined ${adjacency.length} adjacency relationships`);
+
+      // Fallback to geometric if agent returns nothing
+      if (adjacency.length === 0 && unifiedRooms.length > 1) {
+        console.warn('Agent returned no adjacencies, using geometric fallback');
+        adjacency = detectAdjacencyGeometric(unifiedRooms);
+      }
+    } catch (error) {
+      console.error('Agentic verification failed, using geometric fallback:', error);
+      adjacency = detectAdjacencyGeometric(unifiedRooms);
+    }
+
+    // ========================================================================
+    // FINAL: Construct Response
+    // ========================================================================
+    console.log('\n--- Analysis Complete ---');
+
+    const response_data = {
+      id: claudeData.id,
+      address: claudeData.address,
+      totalAreaSqFt: claudeData.totalAreaSqFt,
+      totalAreaSqM: claudeData.totalAreaSqM,
+      ceilingHeight: claudeData.ceilingHeight,
+      entryRoomId: claudeData.entryRoomId,
+      rooms: unifiedRooms.map(r => ({
+        id: r.id,
+        name: r.name,
+        width: r.width,
+        depth: r.depth,
+        color: r.color,
+        originalMeasurements: r.originalMeasurements
+      })),
+      adjacency: adjacency,
+      metadata: {
+        method: 'hybrid-cv-agent',
+        contoursDetected: contours.length,
+        roomsMatched: unifiedRooms.length,
+        adjacenciesFound: adjacency.length,
+        pipeline: 'cv-detection → claude-labels → matching → agentic-adjacency'
+      }
+    };
+
+    console.log('Pipeline summary:', {
+      rooms: response_data.rooms.length,
+      adjacencies: response_data.adjacency.length,
+      method: response_data.metadata.method
     });
 
     return new Response(
-      JSON.stringify(floorplanData),
-      { 
+      JSON.stringify(response_data),
+      {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200
       }
