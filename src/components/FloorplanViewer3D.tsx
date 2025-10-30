@@ -4,8 +4,7 @@ import { OrbitControls, PerspectiveCamera, Text } from "@react-three/drei";
 import * as THREE from "three";
 import { Button } from "@/components/ui/button";
 import { Home, Move, RotateCcw } from "lucide-react";
-import { whateleyRoadFloorplan } from "@/data/whateley-road-floorplan";
-import { Room as RoomType } from "@/types/floorplan";
+import { Room as RoomType, FloorplanData } from "@/types/floorplan";
 
 const Room3D = ({ room }: { room: RoomType }) => {
   const [hovered, setHovered] = useState(false);
@@ -82,10 +81,11 @@ const Room3D = ({ room }: { room: RoomType }) => {
 
 interface FloorplanViewer3DProps {
   floorplanImage: string;
+  floorplanData: FloorplanData;
   onBack: () => void;
 }
 
-export const FloorplanViewer3D = ({ floorplanImage, onBack }: FloorplanViewer3DProps) => {
+export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack }: FloorplanViewer3DProps) => {
   const [controlsMode, setControlsMode] = useState<"orbit" | "first-person">("orbit");
   const controlsRef = useRef<any>();
 
@@ -101,9 +101,9 @@ export const FloorplanViewer3D = ({ floorplanImage, onBack }: FloorplanViewer3DP
       <div className="absolute top-0 left-0 right-0 z-10 p-4 bg-gradient-to-b from-slate-900/90 to-transparent">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-white">{whateleyRoadFloorplan.address}</h2>
+            <h2 className="text-2xl font-bold text-white">{floorplanData.address}</h2>
             <p className="text-sm text-slate-300">
-              {whateleyRoadFloorplan.rooms.filter(r => r.name.includes('Bedroom')).length} Bed Ground Floor Flat • {whateleyRoadFloorplan.totalAreaSqFt} sq ft
+              {floorplanData.rooms.filter(r => r.name.includes('Bedroom')).length} Bed Ground Floor Flat • {floorplanData.totalAreaSqFt} sq ft
             </p>
           </div>
           <Button onClick={onBack} variant="secondary">
@@ -137,7 +137,7 @@ export const FloorplanViewer3D = ({ floorplanImage, onBack }: FloorplanViewer3DP
         <directionalLight position={[-10, 10, -5]} intensity={0.5} />
 
         {/* Rooms */}
-        {whateleyRoadFloorplan.rooms.map((room) => (
+        {floorplanData.rooms.map((room) => (
           <Room3D key={room.id} room={room} />
         ))}
 
@@ -173,7 +173,7 @@ export const FloorplanViewer3D = ({ floorplanImage, onBack }: FloorplanViewer3DP
       <div className="absolute top-24 left-6 z-10 bg-slate-800/90 backdrop-blur-sm p-4 rounded-xl border border-slate-700 max-w-xs">
         <h3 className="text-white font-semibold mb-2">Room Details</h3>
         <div className="space-y-1 text-sm text-slate-300">
-          {whateleyRoadFloorplan.rooms.map((room) => (
+          {floorplanData.rooms.map((room) => (
             room.originalMeasurements && (
               <p key={room.id}>
                 • {room.name}: {room.originalMeasurements.width} × {room.originalMeasurements.depth}
@@ -181,7 +181,7 @@ export const FloorplanViewer3D = ({ floorplanImage, onBack }: FloorplanViewer3DP
             )
           ))}
           <p className="pt-2 border-t border-slate-600 mt-2">
-            • Ceiling Height: {whateleyRoadFloorplan.ceilingHeight}m
+            • Ceiling Height: {floorplanData.ceilingHeight}m
           </p>
         </div>
       </div>
