@@ -236,13 +236,29 @@ When you have determined all adjacencies, return your final answer as a JSON arr
 /**
  * Fallback: Simple geometric adjacency detection (no AI reasoning)
  * Used when agentic verification fails
+ *
+ * IMPROVED: Better thresholds for Claude-based spatial layouts
  */
 export function detectAdjacencyGeometric(rooms: UnifiedRoomData[]): AdjacencyRelation[] {
   console.warn('Using fallback geometric adjacency detection');
 
+  // Check if rooms have labelPosition (indicates Claude spatial data vs grid fallback)
+  const hasClaudeSpatialData = rooms.some(r => r.labelPosition);
+
   const adjacencies: AdjacencyRelation[] = [];
-  const DISTANCE_THRESHOLD = 25; // pixels - increased tolerance for synthetic contours
-  const OVERLAP_THRESHOLD = 60; // percent
+
+  // IMPROVED: Use tighter thresholds when we have Claude's spatial understanding
+  // Looser thresholds for grid-based layouts where positioning is approximate
+  const DISTANCE_THRESHOLD = hasClaudeSpatialData ? 15 : 30; // pixels
+  const OVERLAP_THRESHOLD = hasClaudeSpatialData ? 50 : 60; // percent
+
+  console.log(
+    `Using ${hasClaudeSpatialData ? 'Claude spatial data' : 'grid fallback'} thresholds: ` +
+    `distance ≤ ${DISTANCE_THRESHOLD}px, overlap ≥ ${OVERLAP_THRESHOLD}%`
+  );
+
+  let candidatesChecked = 0;
+  let candidatesFound = 0;
 
   for (let i = 0; i < rooms.length; i++) {
     const room1 = rooms[i];
@@ -252,8 +268,10 @@ export function detectAdjacencyGeometric(rooms: UnifiedRoomData[]): AdjacencyRel
 
       // Check all four directions
       const directions: EdgeDirection[] = ['north', 'south', 'east', 'west'];
+      let foundAdjacency = false;
 
       for (const edge of directions) {
+        candidatesChecked++;
         const distance = spatialTools.check_edge_distance(rooms, room1.id, room2.id, edge);
 
         if (Math.abs(distance) <= DISTANCE_THRESHOLD) {
@@ -267,13 +285,36 @@ export function detectAdjacencyGeometric(rooms: UnifiedRoomData[]): AdjacencyRel
               room2: room2.id,
               edge: edge
             });
+            candidatesFound++;
+
+            console.log(
+              `✓ Adjacent: "${room1.name}" ↔ "${room2.name}" (${edge}, ` +
+              `${Math.round(distance)}px gap, ${Math.round(overlap)}% overlap)`
+            );
+
+            foundAdjacency = true;
             break; // Only report one adjacency per room pair
+          } else if (Math.abs(distance) <= DISTANCE_THRESHOLD) {
+            // Close but poor alignment - log for debugging
+            console.log(
+              `✗ Near but not adjacent: "${room1.name}" ↔ "${room2.name}" (${edge}, ` +
+              `${Math.round(distance)}px gap, ${Math.round(overlap)}% overlap - too low)`
+            );
           }
         }
+      }
+
+      if (!foundAdjacency && candidatesChecked % 10 === 0) {
+        // Periodic logging to show progress
+        console.log(`  Checked ${candidatesChecked} candidate pairs...`);
       }
     }
   }
 
-  console.log(`Fallback detection found ${adjacencies.length} adjacencies`);
+  console.log(
+    `Fallback detection complete: ${adjacencies.length} adjacencies found ` +
+    `(${candidatesFound}/${candidatesChecked} candidates matched)`
+  );
+
   return adjacencies;
 }
