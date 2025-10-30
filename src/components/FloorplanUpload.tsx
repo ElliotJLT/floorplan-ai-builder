@@ -121,16 +121,6 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
         <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70" />
       </div>
 
-      {/* Homely Logo */}
-      <div className="absolute top-4 left-4 md:top-8 md:left-8 z-20">
-        <div className="flex items-center gap-2 text-white">
-          <div className="w-8 h-8 md:w-10 md:h-10 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg flex items-center justify-center">
-            <span className="text-lg md:text-xl font-bold">H</span>
-          </div>
-          <span className="text-xl md:text-2xl font-semibold">Homely</span>
-        </div>
-      </div>
-
       {/* Content */}
       <div className="relative z-10 min-h-screen flex flex-col justify-center px-4 sm:px-6 md:px-12 lg:px-24 py-20 md:py-16">
         <div className="max-w-3xl w-full">
@@ -175,6 +165,18 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
               </div>
             ) : preview ? (
               <div className="space-y-6">
+                {/* Back button */}
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setPreview(null);
+                    setAdditionalImages([null, null, null]);
+                  }}
+                  className="text-white hover:bg-white/10 -ml-2"
+                >
+                  ← Back
+                </Button>
+
                 {/* Main floorplan preview */}
                 <div className="space-y-4">
                   <h3 className="text-lg md:text-xl font-medium text-white">Main Floorplan</h3>
