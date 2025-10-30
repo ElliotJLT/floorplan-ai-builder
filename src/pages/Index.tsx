@@ -1,13 +1,26 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useState } from "react";
+import { FloorplanUpload } from "@/components/FloorplanUpload";
+import { FloorplanViewer3D } from "@/components/FloorplanViewer3D";
 
 const Index = () => {
+  const [floorplanData, setFloorplanData] = useState<string | null>(null);
+
+  const handleFloorplanUploaded = (imageData: string) => {
+    setFloorplanData(imageData);
+  };
+
+  const handleBack = () => {
+    setFloorplanData(null);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
-    </div>
+    <>
+      {!floorplanData ? (
+        <FloorplanUpload onFloorplanUploaded={handleFloorplanUploaded} />
+      ) : (
+        <FloorplanViewer3D floorplanImage={floorplanData} onBack={handleBack} />
+      )}
+    </>
   );
 };
 
