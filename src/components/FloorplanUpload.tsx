@@ -35,11 +35,10 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
   const [additionalImages, setAdditionalImages] = useState<(string | null)[]>([null, null, null]);
   const [buildingMessage, setBuildingMessage] = useState(buildingMessages[0]);
   const [detectedContours, setDetectedContours] = useState<RoomContour[] | null>(null);
-  const [overlayCanvas, setOverlayCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
   const [isProcessingCV, setIsProcessingCV] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const additionalInputRefs = useRef<(HTMLInputElement | null)[]>([]);
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Cycle through building messages while analyzing
   useEffect(() => {
@@ -107,7 +106,7 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
       const { contours, overlayCanvas } = await detectRoomBoundaries(compressed);
       
       setDetectedContours(contours);
-      setOverlayCanvas(overlayCanvas);
+      setOverlayUrl(overlayCanvas.toDataURL('image/png'));
     } catch (e) {
       console.error(e);
       toast.error("Failed to process image. Please try another file.");
@@ -162,33 +161,8 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
     fileInputRef.current?.click();
   };
 
-  // Draw overlay on preview canvas
-  useEffect(() => {
-    if (!previewCanvasRef.current || !preview || !overlayCanvas) return;
-    
-    const canvas = previewCanvasRef.current;
-    const ctx = canvas.getContext('2d')!;
-    
-    const img = new Image();
-    img.onload = () => {
-      // Set canvas internal resolution
-      canvas.width = img.width;
-      canvas.height = img.height;
-      
-      // Draw original image
-      ctx.drawImage(img, 0, 0);
-      
-      // Draw overlay on top
-      ctx.drawImage(overlayCanvas, 0, 0);
-      
-      // Set display size via CSS to match container
-      const maxWidth = 320; // w-80 = 320px
-      const scale = Math.min(1, maxWidth / img.width);
-      canvas.style.width = `${img.width * scale}px`;
-      canvas.style.height = `${img.height * scale}px`;
-    };
-    img.src = preview;
-  }, [preview, overlayCanvas]);
+  // Overlay handled via layered images; no canvas drawing required
+
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -271,18 +245,20 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
                         </div>
                       )}
-                      {overlayCanvas ? (
-                        <canvas 
-                          ref={previewCanvasRef}
-                          className="rounded-lg"
-                        />
-                      ) : (
+                      <div className="relative">
                         <img 
                           src={preview} 
                           alt="Floorplan preview" 
                           className="w-80 h-auto rounded-lg"
                         />
-                      )}
+                        {overlayUrl && (
+                          <img 
+                            src={overlayUrl} 
+                            alt="" 
+                            className="absolute inset-0 w-full h-full rounded-lg pointer-events-none"
+                          />
+                        )}
+                      </div>
                       {detectedContours && detectedContours.length > 0 && (
                         <div className="mt-2 text-xs text-green-400">
                           ✓ {detectedContours.length} room{detectedContours.length > 1 ? 's' : ''} detected
@@ -334,18 +310,20 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
                         </div>
                       )}
-                      {overlayCanvas ? (
-                        <canvas 
-                          ref={previewCanvasRef}
-                          className="rounded-lg w-full"
-                        />
-                      ) : (
+                      <div className="relative">
                         <img 
                           src={preview} 
                           alt="Floorplan preview" 
                           className="w-full h-auto rounded-lg"
                         />
-                      )}
+                        {overlayUrl && (
+                          <img 
+                            src={overlayUrl} 
+                            alt="" 
+                            className="absolute inset-0 w-full h-full rounded-lg pointer-events-none"
+                          />
+                        )}
+                      </div>
                       {detectedContours && detectedContours.length > 0 && (
                         <div className="mt-2 text-xs text-green-400">
                           ✓ {detectedContours.length} room{detectedContours.length > 1 ? 's' : ''} detected
