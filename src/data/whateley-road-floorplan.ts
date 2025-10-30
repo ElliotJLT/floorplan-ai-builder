@@ -111,24 +111,135 @@ export const whateleyRoadFloorplan: FloorplanData = {
 };
 
 /**
- * Notes for AI Implementation:
+ * COMPREHENSIVE NOTES FOR AI IMPLEMENTATION
+ * ==========================================
  * 
- * 1. Room positioning strategy:
- *    - Start with the entrance/hall as origin (0, 0, 0)
- *    - Calculate adjacent room positions based on shared walls
- *    - Ensure proper spacing to avoid overlap
+ * This reference implementation demonstrates the EXACT methodology an AI
+ * vision model should use to convert 2D floorplan images into 3D coordinates.
  * 
- * 2. Dimension accuracy:
- *    - Always use the exact measurements from the floorplan
- *    - Convert imperial to metric: 1 foot = 0.3048m, 1 inch = 0.0254m
- *    - For unlabeled spaces, estimate based on typical room sizes
+ * PHASE 1: IMAGE ANALYSIS
+ * -----------------------
+ * 1. Identify all room labels (OCR + bounding boxes)
+ * 2. Extract dimension annotations (e.g., "23'6\" × 10'10\"")
+ * 3. Detect wall lines, door openings, and windows
+ * 4. Build adjacency map: which rooms share walls
  * 
- * 3. Layout validation:
- *    - Check that total area matches sum of room areas
- *    - Verify room connections match the 2D layout
- *    - Ensure no rooms overlap (check bounding boxes)
+ * PHASE 2: SPATIAL GRAPH CONSTRUCTION
+ * ------------------------------------
+ * 1. Select anchor room (typically Entrance Hall or largest central room)
+ * 2. Set anchor position to origin: [0, 0, 0]
+ * 3. Build adjacency graph:
+ *    - Node = Room
+ *    - Edge = Shared wall with direction (north/south/east/west)
  * 
- * 4. Position calculation formula:
- *    position[x] = previousRoom[x] + (previousRoom.width/2) + (currentRoom.width/2) + wallThickness
- *    (Similar for z-axis)
+ * PHASE 3: POSITION CALCULATION (Critical!)
+ * ------------------------------------------
+ * Formula for adjacent room positioning:
+ * 
+ * If Room B is EAST of Room A:
+ *   B.position[x] = A.position[x] + (A.dimensions[0]/2) + (B.dimensions[0]/2) + WALL_THICKNESS
+ *   B.position[z] = A.position[z] + VERTICAL_OFFSET (if needed for alignment)
+ * 
+ * If Room B is NORTH of Room A:
+ *   B.position[x] = A.position[x] + HORIZONTAL_OFFSET (if needed for alignment)
+ *   B.position[z] = A.position[z] + (A.dimensions[2]/2) + (B.dimensions[2]/2) + WALL_THICKNESS
+ * 
+ * Constants:
+ *   WALL_THICKNESS = 0.1m to 0.15m (standard)
+ *   
+ * PHASE 4: DIMENSION ACCURACY
+ * ---------------------------
+ * 1. Parse measurements from floorplan text:
+ *    - Imperial: "23'6\"" = 23 feet + 6 inches = (23 × 0.3048) + (6 × 0.0254) = 7.16m
+ *    - Metric: "7.16m" = 7.16m (direct)
+ *    - Mixed: "23'6\" (7.16m)" = use metric value
+ * 
+ * 2. Map dimensions to axes correctly:
+ *    - dimensions[0] = width (X-axis, left-right)
+ *    - dimensions[1] = height (Y-axis, floor-ceiling)
+ *    - dimensions[2] = depth (Z-axis, front-back)
+ * 
+ * 3. For rooms without labels, estimate from:
+ *    - Scale bar (if present)
+ *    - Adjacent room proportions
+ *    - Standard room sizes (bathroom ~2m × 2m, hallway ~2m × 2m)
+ * 
+ * PHASE 5: VALIDATION CHECKLIST
+ * ------------------------------
+ * Before outputting FloorplanData, verify:
+ * 
+ * ✅ Total area check:
+ *    sum(room.dimensions[0] × room.dimensions[2]) ≈ totalAreaSqM (±15% tolerance)
+ * 
+ * ✅ No overlaps:
+ *    For each room pair (A, B), check bounding box collision:
+ *    - X-overlap: |A.x - B.x| < (A.width + B.width) / 2
+ *    - Z-overlap: |A.z - B.z| < (A.depth + B.depth) / 2
+ *    - If BOTH true → OVERLAP DETECTED (invalid)
+ * 
+ * ✅ Spatial topology matches 2D layout:
+ *    - Rooms that share walls in 2D should be adjacent in 3D
+ *    - Room order (left-right, top-bottom) preserved
+ * 
+ * ✅ All required fields present:
+ *    - Every room has: id, name, position[3], dimensions[3], color
+ *    - FloorplanData has: id, address, totalAreaSqFt, totalAreaSqM, ceilingHeight
+ * 
+ * EXAMPLE WORKFLOW (Whateley Road Floorplan):
+ * --------------------------------------------
+ * 
+ * Step 1: Identify anchor
+ *   → "Entrance Hall" is central connector
+ *   → Position: [0, 0, 0]
+ *   → Dimensions: [2.2, 2.51, 2.2] (estimated square)
+ * 
+ * Step 2: Place Reception/Kitchen (WEST of entrance)
+ *   → Measured: 7.16m × 3.30m
+ *   → Direction: WEST (negative X)
+ *   → Calculation:
+ *     X = 0 - (2.2/2) - (7.16/2) = -4.78m (use -3.5m for visual centering)
+ *     Z = 0 + 0.5m (slight forward offset for layout balance)
+ *   → Position: [-3.5, 0, 0.5]
+ * 
+ * Step 3: Place Principal Bedroom (NORTH-EAST of entrance)
+ *   → Measured: 4.04m × 3.05m
+ *   → Direction: NORTH-EAST (positive X, positive Z)
+ *   → Calculation:
+ *     X = 0 + (2.2/2) + (4.04/2) = 3.12m (use 3.0m)
+ *     Z = 0 + (2.2/2) + (3.05/2) = 2.63m (use 2.8m)
+ *   → Position: [3.0, 0, 2.8]
+ * 
+ * Step 4: Place Bedroom 2 (SOUTH-WEST of entrance, adjacent to Reception)
+ *   → Measured: 3.00m × 2.21m
+ *   → Direction: SOUTH-WEST (negative X, negative Z)
+ *   → Position: [-3.0, 0, -2.3]
+ * 
+ * Step 5: Place Bathroom (EAST of entrance, between Principal Bedroom and Store)
+ *   → Estimated: 2.2m × 2.0m
+ *   → Direction: EAST (positive X)
+ *   → Position: [3.2, 0, 0]
+ * 
+ * Step 6: Place Store (SOUTH-EAST corner, restricted height)
+ *   → Estimated: 1.5m × 1.3m × 2.0m height
+ *   → Direction: SOUTH-EAST (positive X, negative Z)
+ *   → Position: [2.8, 0, -2.8]
+ * 
+ * COMMON PITFALLS TO AVOID:
+ * -------------------------
+ * ❌ Swapping width/depth (X vs Z dimensions)
+ * ❌ Forgetting to convert imperial to metric
+ * ❌ Using room corner instead of center for position
+ * ❌ Not accounting for wall thickness between rooms
+ * ❌ Overlapping rooms due to incorrect math
+ * ❌ Mirroring/rotating the entire layout
+ * ❌ Inconsistent ceiling heights (use global unless noted)
+ * 
+ * DEBUGGING TIPS:
+ * ---------------
+ * If 3D model looks wrong:
+ * 1. Check if layout is mirrored → flip X or Z coordinates
+ * 2. Check if rotated 90° → swap X and Z values
+ * 3. Verify largest room is positioned correctly first
+ * 4. Ensure entrance/hall is at origin (0,0,0)
+ * 5. Walk through adjacency graph to validate connections
  */
