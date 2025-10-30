@@ -13,7 +13,9 @@ interface FloorplanUploadProps {
 export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, previewImage }: FloorplanUploadProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+  const [additionalImages, setAdditionalImages] = useState<(string | null)[]>([null, null, null]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const additionalInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   
   // Compress oversized images before sending to the backend to avoid timeouts/413s
   const compressImage = useCallback(async (file: File): Promise<string> => {
@@ -56,15 +58,41 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
     try {
       const compressed = await compressImage(file);
       setPreview(compressed);
-      toast.success("Floorplan uploaded! Generating 3D model...");
-      setTimeout(() => {
-        onFloorplanUploaded(compressed);
-      }, 800);
+      toast.success("Floorplan uploaded! Add more images or click Analyze.");
     } catch (e) {
       console.error(e);
       toast.error("Failed to process image. Please try another file.");
     }
-  }, [compressImage, onFloorplanUploaded]);
+  }, [compressImage]);
+
+  const handleAdditionalFile = useCallback(async (file: File, index: number) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please upload an image file");
+      return;
+    }
+
+    try {
+      const compressed = await compressImage(file);
+      setAdditionalImages(prev => {
+        const updated = [...prev];
+        updated[index] = compressed;
+        return updated;
+      });
+      toast.success(`Image ${index + 2} added!`);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to process image.");
+    }
+  }, [compressImage]);
+
+  const handleSubmit = useCallback(() => {
+    if (!preview) {
+      toast.error("Please upload a floorplan first");
+      return;
+    }
+    toast.info("Analyzing floorplan with AI...");
+    onFloorplanUploaded(preview);
+  }, [preview, onFloorplanUploaded]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -93,17 +121,27 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
         <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70" />
       </div>
 
+      {/* Homely Logo */}
+      <div className="absolute top-4 left-4 md:top-8 md:left-8 z-20">
+        <div className="flex items-center gap-2 text-white">
+          <div className="w-8 h-8 md:w-10 md:h-10 bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg flex items-center justify-center">
+            <span className="text-lg md:text-xl font-bold">H</span>
+          </div>
+          <span className="text-xl md:text-2xl font-semibold">Homely</span>
+        </div>
+      </div>
+
       {/* Content */}
-      <div className="relative z-10 min-h-screen flex flex-col justify-center px-6 md:px-12 lg:px-24 py-16">
-        <div className="max-w-3xl">
+      <div className="relative z-10 min-h-screen flex flex-col justify-center px-4 sm:px-6 md:px-12 lg:px-24 py-20 md:py-16">
+        <div className="max-w-3xl w-full">
           {/* Hero Text */}
-          <div className="mb-12 space-y-6">
-            <h1 className="text-5xl md:text-7xl font-serif font-normal text-white leading-tight">
+          <div className="mb-8 md:mb-12 space-y-4 md:space-y-6">
+            <h1 className="text-4xl sm:text-5xl md:text-7xl font-serif font-normal text-white leading-tight">
               Transform floorplans
               <br />
               into reality.
             </h1>
-            <p className="text-lg md:text-xl text-white/90 max-w-xl">
+            <p className="text-base sm:text-lg md:text-xl text-white/90 max-w-xl">
               Upload your 2D floorplan and experience it as an immersive 3D walkthrough in seconds.
             </p>
           </div>
@@ -120,60 +158,107 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
           >
             {isAnalyzing && previewImage ? (
               <div className="space-y-6">
-                <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 max-w-xs">
+                <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 w-full max-w-xs">
                   <img 
                     src={previewImage} 
                     alt="Analyzing floorplan" 
                     className="w-full h-auto rounded-lg"
                   />
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
+                <div className="flex items-center gap-3 md:gap-4">
+                  <div className="animate-spin rounded-full h-6 w-6 md:h-8 md:w-8 border-b-2 border-white flex-shrink-0" />
                   <div>
-                    <h3 className="text-xl font-medium text-white">Analyzing floorplan...</h3>
-                    <p className="text-sm text-white/70">AI is extracting room dimensions and generating 3D layout</p>
+                    <h3 className="text-lg md:text-xl font-medium text-white">Analyzing floorplan...</h3>
+                    <p className="text-xs md:text-sm text-white/70">AI is extracting room dimensions and generating 3D layout</p>
                   </div>
                 </div>
               </div>
             ) : preview ? (
-              <div className="space-y-4">
-                <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 max-w-xs">
-                  <img 
-                    src={preview} 
-                    alt="Floorplan preview" 
-                    className="w-full h-auto rounded-lg"
-                  />
+              <div className="space-y-6">
+                {/* Main floorplan preview */}
+                <div className="space-y-4">
+                  <h3 className="text-lg md:text-xl font-medium text-white">Main Floorplan</h3>
+                  <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-3 md:p-4 w-full max-w-xs">
+                    <img 
+                      src={preview} 
+                      alt="Floorplan preview" 
+                      className="w-full h-auto rounded-lg"
+                    />
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    onClick={triggerFileSelect}
+                    className="bg-white/10 backdrop-blur-sm border-white/30 text-white hover:bg-white/20 text-sm md:text-base"
+                    size="sm"
+                  >
+                    <FileImage className="mr-2 h-4 w-4" />
+                    Choose Different File
+                  </Button>
                 </div>
-                <Button 
-                  variant="outline" 
-                  onClick={triggerFileSelect}
-                  className="bg-white/10 backdrop-blur-sm border-white/30 text-white hover:bg-white/20"
+
+                {/* Additional images section */}
+                <div className="space-y-4">
+                  <h3 className="text-lg md:text-xl font-medium text-white">Additional Images (Optional)</h3>
+                  <p className="text-xs md:text-sm text-white/70">Enhance the aesthetic with more property images</p>
+                  
+                  <div className="grid grid-cols-3 gap-2 md:gap-3 max-w-2xl">
+                    {additionalImages.map((img, idx) => (
+                      <div key={idx}>
+                        <input
+                          ref={el => additionalInputRefs.current[idx] = el}
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleAdditionalFile(file, idx);
+                          }}
+                          className="hidden"
+                        />
+                        <div
+                          onClick={() => additionalInputRefs.current[idx]?.click()}
+                          className="aspect-square bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg flex items-center justify-center cursor-pointer hover:bg-white/15 hover:border-white/30 transition-all overflow-hidden"
+                        >
+                          {img ? (
+                            <img src={img} alt={`Additional ${idx + 1}`} className="w-full h-full object-cover" />
+                          ) : (
+                            <Upload className="h-6 w-6 md:h-8 md:w-8 text-white/50" />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Analyze button */}
+                <Button
+                  onClick={handleSubmit}
+                  className="bg-white text-black hover:bg-white/90 px-8 font-medium w-full sm:w-auto"
+                  size="lg"
                 >
-                  <FileImage className="mr-2 h-4 w-4" />
-                  Choose Different File
+                  Analyze & Generate 3D
                 </Button>
               </div>
             ) : (
-              <div className="flex gap-3 max-w-2xl">
+              <div className="flex flex-col sm:flex-row gap-3 w-full max-w-2xl">
                 <div
                   onClick={triggerFileSelect}
                   className={`
-                    flex-1 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl px-6 py-4
+                    flex-1 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl px-4 py-3 md:px-6 md:py-4
                     text-white/70 placeholder:text-white/50 cursor-pointer
                     transition-all duration-300 hover:bg-white/15 hover:border-white/30
                     ${isDragging ? "bg-white/20 border-white/40 scale-[1.01]" : ""}
                   `}
                 >
                   <div className="flex items-center gap-3">
-                    <FileImage className="h-5 w-5 text-white/70" />
-                    <span className="text-sm">
+                    <FileImage className="h-4 w-4 md:h-5 md:w-5 text-white/70 flex-shrink-0" />
+                    <span className="text-xs md:text-sm">
                       {isDragging ? "Drop your floorplan here" : "Select floorplan or drag & drop"}
                     </span>
                   </div>
                 </div>
                 <Button
                   onClick={triggerFileSelect}
-                  className="bg-white text-black hover:bg-white/90 px-8 font-medium"
+                  className="bg-white text-black hover:bg-white/90 px-6 md:px-8 font-medium w-full sm:w-auto"
                   size="lg"
                 >
                   Upload
@@ -188,9 +273,11 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
               </div>
             )}
             
-            <p className="text-sm text-white/60">
-              Supports PNG, JPG, JPEG formats • AI-powered 3D generation
-            </p>
+            {!preview && (
+              <p className="text-xs md:text-sm text-white/60">
+                Supports PNG, JPG, JPEG formats • AI-powered 3D generation
+              </p>
+            )}
           </div>
         </div>
       </div>
