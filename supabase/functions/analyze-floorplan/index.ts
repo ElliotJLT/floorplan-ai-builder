@@ -45,27 +45,40 @@ serve(async (req) => {
 
 Your task: Extract room names, dimensions, label positions, total area, and identify the entry room.
 
+⚠️ CRITICAL REQUIREMENT - SPATIAL COORDINATES ⚠️
+The labelPosition field is ABSOLUTELY MANDATORY for every room. Without accurate pixel coordinates,
+the 3D model will be completely broken and rooms will be stacked in nonsense positions.
+
 INSTRUCTIONS:
 1. Identify all rooms with their dimensions
    - Measure width and depth in meters from the floorplan
    - Convert from feet/inches if needed (1 foot = 0.3048m)
    - Include original measurements as shown on plan
-   - IMPORTANT: Record the pixel coordinates where each room's label appears on the image
-     * Measure from the TOP-LEFT corner of the image
-     * x = horizontal position (0 = left edge)
-     * y = vertical position (0 = top edge)
-     * The label position should be where the room name text is located
+   - ⚠️ CRITICAL: Record the pixel coordinates where each room's label appears on the image
+     * Measure from the TOP-LEFT corner of the image (origin: 0,0)
+     * x = horizontal position (0 = left edge, increases rightward)
+     * y = vertical position (0 = top edge, increases downward)
+     * Place the coordinates at the CENTER of the room name text
+     * If the room label is split across multiple lines, use the center of the text block
+     * For large rooms with labels in corners, estimate the visual center of the room space
+     * DOUBLE CHECK: Every room MUST have valid labelPosition coordinates
 
 2. Calculate total floor area (in both sqFt and sqM)
 
 3. Identify the entry room (usually has front door/main entrance)
 
-4. Assign colors based on room type:
+4. Include ALL spaces shown on the floorplan:
+   - Interior rooms (bedrooms, bathrooms, kitchen, living, halls)
+   - Exterior spaces (balconies, terraces, patios, gardens)
+   - Utility spaces (storage, closets if shown as separate rooms)
+
+5. Assign colors based on room type:
    - Living/Reception rooms: warm tones (#fef3c7, #fde68a)
    - Bedrooms: cool blues (#e0f2fe, #bae6fd)
    - Bathrooms: aqua (#cffafe, #a5f3fc)
    - Kitchen: green (#d1fae5, #a7f3d0)
    - Halls/Corridors: neutral (#f3f4f6, #e5e7eb)
+   - Balconies/Terraces: light green (#f0fdf4, #dcfce7)
 
 Return ONLY valid JSON in this exact format:
 {
@@ -114,11 +127,14 @@ CRITICAL RULES:
 - Ensure all measurements are in meters
 - totalAreaSqM and totalAreaSqFt must match room dimensions
 - entryRoomId must match one of the room IDs
-- labelPosition is REQUIRED for each room - estimate pixel coordinates carefully
+- ⚠️ labelPosition is ABSOLUTELY REQUIRED for EVERY room - missing coordinates = broken 3D model
+- Carefully measure pixel coordinates for each room label
 - DO NOT include adjacency data - spatial relationships will be calculated separately
 
 DUPLICATE PREVENTION (CRITICAL):
-- Each room should appear ONLY ONCE in the rooms array - NO EXCEPTIONS
+⚠️ Each room should appear EXACTLY ONCE in the rooms array - NO DUPLICATES ALLOWED ⚠️
+
+Common mistakes that create duplicates:
 - If a space serves multiple purposes (e.g., "Kitchen/Dining Room"), treat it as ONE room
   * Use the primary function for the ID
   * Keep the full descriptive name
@@ -128,8 +144,14 @@ DUPLICATE PREVENTION (CRITICAL):
   * Living + Reception (same room, different names)
   * Bathroom + WC (unless they're genuinely separate rooms)
   * Bedroom + Dressing area (part of the same bedroom)
-- DOUBLE CHECK: Count your rooms before submitting - each physical space = 1 entry
-- If you see "Reception/Living Room" or similar, that's ONE room, not two`;
+  * Multiple detections of the same room with slightly different measurements
+
+VALIDATION BEFORE SUBMITTING:
+1. Count your rooms - does the number match the physical spaces in the floorplan?
+2. Check for duplicate room names - each should be unique
+3. Verify every room has labelPosition with valid x,y coordinates
+4. If you see "Kitchen/Living Room" or similar combined names, that's ONE room, not two or three
+5. Compare room areas - if two rooms have >80% similar areas and similar names, they're likely duplicates`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -283,27 +305,32 @@ DUPLICATE PREVENTION (CRITICAL):
         const existingArea = existingRoom.width * existingRoom.depth;
         const similarity = areaSimilarity(area, existingArea);
 
-        // FIXED: Lowered threshold from 0.9 to 0.7 (70% similarity = likely duplicate)
-        if (similarity > 0.7) {
-          // Likely a duplicate (>70% area match)
-          console.warn(`⚠ Duplicate room detected: "${room.name}" (similar to "${existingRoom.name}", ${(similarity * 100).toFixed(0)}% area match)`);
+        // IMPROVED: Lowered threshold from 0.7 to 0.6 (60% similarity = likely duplicate)
+        // This catches cases where Claude returns slightly different measurements
+        // e.g., 19.5 sqm vs 20.1 sqm vs 18.9 sqm for the same room
+        if (similarity > 0.6) {
+          // Likely a duplicate (>60% area match)
+          console.warn(`⚠ DUPLICATE DETECTED: "${room.name}" matches "${existingRoom.name}" (${(similarity * 100).toFixed(0)}% area similarity)`);
+          console.log(`  → Areas: ${area.toFixed(2)}sqm vs ${existingArea.toFixed(2)}sqm`);
+          console.log(`  → Normalized: "${normalized}"`);
 
-          // Keep the one with more complete data or longer name (often has more info)
-          if (room.name.length > existingRoom.name.length || !existingRoom.labelPosition) {
-            console.log(`  → Replacing with better version: "${room.name}"`);
-            // CRITICAL FIX: Ensure the replacement room has a unique ID
-            // If the existing room had a suffixed ID, preserve that pattern
-            const existingId = existingRoom.id;
-            if (existingId !== room.id) {
-              room.id = existingId; // Keep the same ID to maintain consistency
-            }
+          // Keep the one with more complete data
+          const roomQuality = (room.labelPosition ? 10 : 0) + room.name.length;
+          const existingQuality = (existingRoom.labelPosition ? 10 : 0) + existingRoom.name.length;
+
+          if (roomQuality > existingQuality) {
+            console.log(`  → Replacing with better version: "${room.name}" (quality: ${roomQuality} > ${existingQuality})`);
+            // Preserve the existing room's ID to maintain consistency
+            room.id = existingRoom.id;
             seenRooms.set(normalized, room);
           } else {
-            console.log(`  → Keeping existing version: "${existingRoom.name}"`);
+            console.log(`  → Keeping existing version: "${existingRoom.name}" (quality: ${existingQuality} >= ${roomQuality})`);
           }
         } else {
           // Different areas - genuinely different rooms (e.g., Bedroom 1 vs Bedroom 2)
-          console.log(`ℹ Different room with similar name: "${room.name}" vs "${existingRoom.name}" (${(similarity * 100).toFixed(0)}% area match)`);
+          console.log(`ℹ Similar name, different room: "${room.name}" vs "${existingRoom.name}" (${(similarity * 100).toFixed(0)}% area match)`);
+          console.log(`  → Areas: ${area.toFixed(2)}sqm vs ${existingArea.toFixed(2)}sqm - treating as separate rooms`);
+
           // Add a suffix to make it unique AND update the room ID
           let suffix = 2;
           let uniqueKey = `${normalized}${suffix}`;
@@ -382,8 +409,9 @@ DUPLICATE PREVENTION (CRITICAL):
     let adjacency: any[] = [];
     try {
       // Hard timeout to prevent function timeouts when the agent loops too long
-      const AGENT_TIMEOUT_MS = 12000;
-      console.log(`Starting agentic adjacency with ${AGENT_TIMEOUT_MS}ms timeout...`);
+      // INCREASED: 12s → 25s to give agent more time for complex floorplans
+      const AGENT_TIMEOUT_MS = 25000;
+      console.log(`Starting agentic adjacency analysis (timeout: ${AGENT_TIMEOUT_MS}ms)...`);
 
       const agentPromise = determineAdjacencyWithAgent(unifiedRooms, CLAUDE_API_KEY);
       adjacency = await Promise.race([
