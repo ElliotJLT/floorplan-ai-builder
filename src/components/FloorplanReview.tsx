@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { AIFloorplanResponse, AdjacencyRelation, ParsedRoomData } from "@/types/floorplan";
+import { AIFloorplanResponse, AdjacencyRelation, UnifiedRoomData } from "@/types/floorplan";
 import { ArrowLeft, Check, RotateCcw } from "lucide-react";
 
 interface FloorplanReviewProps {
@@ -15,10 +15,10 @@ interface FloorplanReviewProps {
 }
 
 export const FloorplanReview = ({ aiResponse, onConfirm, onReanalyze, onBack }: FloorplanReviewProps) => {
-  const [rooms, setRooms] = useState<ParsedRoomData[]>(aiResponse.rooms);
+  const [rooms, setRooms] = useState<UnifiedRoomData[]>(aiResponse.rooms);
   const [adjacency, setAdjacency] = useState<AdjacencyRelation[]>(aiResponse.adjacency || []);
 
-  const handleRoomChange = (index: number, field: keyof ParsedRoomData, value: string | number) => {
+  const handleRoomChange = (index: number, field: keyof UnifiedRoomData, value: string | number) => {
     const updated = [...rooms];
     if (field === 'width' || field === 'depth') {
       updated[index] = { ...updated[index], [field]: parseFloat(value.toString()) || 0 };
