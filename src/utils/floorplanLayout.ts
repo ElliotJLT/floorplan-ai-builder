@@ -22,6 +22,12 @@ interface PlacedRoom {
 export function calculateConnectedLayout(aiResponse: AIFloorplanResponse): FloorplanData {
   const { rooms, adjacency, entryRoomId, ceilingHeight } = aiResponse;
   
+  // Check if adjacency data is valid
+  if (!adjacency || adjacency.length === 0) {
+    console.warn('No adjacency data provided, using grid fallback layout');
+    return arrangeInGrid(aiResponse);
+  }
+  
   // Build adjacency map for quick lookup
   const adjacencyMap = new Map<string, Array<{ roomId: string; edge: EdgeDirection }>>();
   
@@ -83,6 +89,14 @@ export function calculateConnectedLayout(aiResponse: AIFloorplanResponse): Floor
       
       queue.push(roomId);
     }
+  }
+  
+  // Check if all rooms were placed
+  if (placedRooms.size < rooms.length) {
+    const unplacedRooms = rooms.filter(r => !placedRooms.has(r.id));
+    console.warn('Some rooms could not be placed via adjacency:', unplacedRooms.map(r => r.name));
+    console.warn('Falling back to grid layout');
+    return arrangeInGrid(aiResponse);
   }
   
   // Convert to FloorplanData
@@ -227,4 +241,50 @@ function calculateMinDistance(r1: Room, r2: Room): number {
   }
   
   return Math.max(xDistance, zDistance);
+}
+
+/**
+ * Fallback grid layout when adjacency data is missing or incomplete
+ * Places rooms in a simple grid pattern based on their size
+ */
+function arrangeInGrid(aiResponse: AIFloorplanResponse): FloorplanData {
+  const { rooms, ceilingHeight } = aiResponse;
+  
+  // Sort rooms by area (largest first)
+  const sortedRooms = [...rooms].sort((a, b) => {
+    const areaA = a.width * a.depth;
+    const areaB = b.width * b.depth;
+    return areaB - areaA;
+  });
+  
+  // Calculate grid dimensions (try to make it roughly square)
+  const gridSize = Math.ceil(Math.sqrt(sortedRooms.length));
+  
+  const finalRooms: Room[] = sortedRooms.map((room, index) => {
+    const row = Math.floor(index / gridSize);
+    const col = index % gridSize;
+    
+    // Calculate position with spacing
+    const spacing = 0.5; // meters between rooms
+    const x = col * (room.width + spacing);
+    const z = row * (room.depth + spacing);
+    
+    return {
+      id: room.id,
+      name: room.name,
+      position: [x, 0, z] as [number, number, number],
+      dimensions: [room.width, ceilingHeight, room.depth] as [number, number, number],
+      color: room.color,
+      originalMeasurements: room.originalMeasurements
+    };
+  });
+  
+  return {
+    id: aiResponse.id,
+    address: aiResponse.address,
+    totalAreaSqFt: aiResponse.totalAreaSqFt,
+    totalAreaSqM: aiResponse.totalAreaSqM,
+    ceilingHeight: aiResponse.ceilingHeight,
+    rooms: finalRooms
+  };
 }

@@ -25,72 +25,58 @@ serve(async (req) => {
 
     console.log('Analyzing floorplan with Claude AI...');
 
-    const systemPrompt = `You are an expert architectural analyst specializing in 2D floorplan interpretation.
+    const systemPrompt = `You are an expert at analyzing 2D architectural floorplans.
 
-YOUR TASK: Extract room data and spatial relationships (NOT precise coordinates).
+Your task: Extract room dimensions and identify which rooms share walls.
 
-STEP 1: MEASUREMENT EXTRACTION
-- Identify all room labels and dimensions (e.g., "7.16m x 3.30m")
-- Extract room names (Kitchen, Bedroom, Living Room, etc.)
-- Note total property area if labeled
-- Record ceiling height if mentioned (default 2.4m)
+STEP 1: Identify all rooms with their dimensions
+- Measure width and depth in meters from the floorplan
+- Convert from feet/inches if needed
+- Include original measurements as shown on plan
 
-STEP 2: SPATIAL RELATIONSHIP MAPPING (CRITICAL!)
-For each pair of rooms that share a wall:
-- Identify which rooms are adjacent
-- Determine the direction: is room2 NORTH/SOUTH/EAST/WEST of room1?
-- Use the floorplan orientation to determine directions:
-  * NORTH = towards top of image
-  * SOUTH = towards bottom of image  
-  * EAST = towards right of image
-  * WEST = towards left of image
+STEP 2: Determine which rooms PHYSICALLY TOUCH each other
+- Only list rooms that share a wall
+- Use cardinal directions from room1's perspective TO room2:
+  * "north" = room2 is at the TOP/BACK of room1
+  * "south" = room2 is at the BOTTOM/FRONT of room1  
+  * "east" = room2 is to the RIGHT of room1
+  * "west" = room2 is to the LEFT of room1
 
-STEP 3: IDENTIFY ENTRY ROOM
-- Determine which room is the entrance/entry point (usually "Entrance Hall" or "Reception")
-- This will be the starting point for layout calculation
+STEP 3: Identify the entry room (usually has front door/main entrance)
 
-OUTPUT FORMAT (CRITICAL - Return ONLY valid JSON, no markdown):
+Return ONLY valid JSON in this exact format:
 {
-  "id": "address-slug",
-  "address": "Full address from image",
-  "totalAreaSqFt": <number>,
-  "totalAreaSqM": <number>,
+  "id": "unique-id",
+  "address": "property address from plan",
+  "totalAreaSqFt": 556,
+  "totalAreaSqM": 51.65,
   "ceilingHeight": 2.4,
   "entryRoomId": "entrance-hall",
   "rooms": [
     {
-      "id": "room-name-lowercase",
-      "name": "Room Name",
-      "width": 7.16,
-      "depth": 3.30,
-      "color": "#hex-color",
+      "id": "entrance-hall",
+      "name": "Entrance Hall",
+      "width": 2.5,
+      "depth": 1.8,
+      "color": "#e0f2fe",
       "originalMeasurements": {
-        "width": "7.16m",
-        "depth": "3.30m"
+        "width": "2.50m",
+        "depth": "1.80m"
       }
     }
   ],
   "adjacency": [
-    {
-      "room1": "entrance-hall",
-      "room2": "living-room",
-      "edge": "west"
-    },
-    {
-      "room1": "living-room",
-      "room2": "kitchen",
-      "edge": "north"
-    }
+    {"room1": "entrance-hall", "room2": "reception", "edge": "west"},
+    {"room1": "reception", "room2": "kitchen", "edge": "north"}
   ]
 }
 
-IMPORTANT RULES:
-- All measurements in METERS
-- width = X-axis (left-right), depth = Z-axis (front-back)
-- Use distinct hex colors for each room
-- adjacency MUST include ALL pairs of rooms that share a wall
-- edge directions: "north", "south", "east", "west" (lowercase)
-- entryRoomId MUST match one of the room IDs`;
+CRITICAL RULES:
+- adjacency array MUST list ALL rooms that share walls
+- Each adjacency entry connects exactly 2 rooms
+- If room A touches room B, you MUST include that pair
+- Use lowercase IDs with hyphens (e.g., "entrance-hall")
+- edge values: "north", "south", "east", "west" only`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -164,8 +150,11 @@ IMPORTANT RULES:
     
     const floorplanData = JSON.parse(jsonText);
     
+    // Log adjacency data for debugging
+    console.log('Adjacency from Claude:', JSON.stringify(floorplanData.adjacency, null, 2));
     console.log('Floorplan analysis complete:', {
       rooms: floorplanData.rooms?.length,
+      adjacencyCount: floorplanData.adjacency?.length || 0,
       totalArea: floorplanData.totalAreaSqM
     });
 

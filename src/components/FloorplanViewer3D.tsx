@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Home, Move, RotateCcw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Room as RoomType, FloorplanData } from "@/types/floorplan";
 import { validateLayout } from "@/utils/floorplanLayout";
+import { toast } from "sonner";
 
 const Room3D = ({ room, isSelected, onSelect }: { room: RoomType; isSelected: boolean; onSelect: () => void }) => {
   const [hovered, setHovered] = useState(false);
@@ -130,7 +131,26 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
           </div>
           <div className="flex gap-2">
             <Button
-              onClick={() => setShowValidation(!showValidation)}
+              onClick={() => {
+                const validation = validateLayout(floorplanData);
+                if (validation.isValid) {
+                  toast.success('Layout is valid - no overlaps or significant gaps');
+                } else {
+                  const overlapDetails = validation.overlaps.map(o => `${o.room1} ↔ ${o.room2}`).join(', ');
+                  const gapDetails = validation.gaps.map(g => `${g.room1} ↔ ${g.room2}`).join(', ');
+                  
+                  let message = 'Layout issues detected:\n';
+                  if (validation.overlaps.length > 0) {
+                    message += `\nOverlaps: ${overlapDetails}`;
+                  }
+                  if (validation.gaps.length > 0) {
+                    message += `\nGaps: ${gapDetails}`;
+                  }
+                  
+                  toast.error(message);
+                }
+                setShowValidation(!showValidation);
+              }}
               variant={validation.isValid ? "secondary" : "destructive"}
               size="sm"
             >
@@ -142,7 +162,7 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
               ) : (
                 <>
                   <AlertTriangle className="mr-2 h-4 w-4" />
-                  {validation.overlaps.length} Issues
+                  {validation.overlaps.length + validation.gaps.length} Issues
                 </>
               )}
             </Button>
