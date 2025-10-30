@@ -34,13 +34,14 @@ async function decodeImage(imageData: string): Promise<{ pixels: Uint8Array; wid
 
     const [, format, base64Data] = base64Match;
     
-    // Only support PNG for now (most common for floorplans)
+    console.log(`  → Detected image format: ${format.toUpperCase()}`);
+    
+    // Currently only PNG is supported (JPEG causes issues with Deno Deploy dependencies)
+    // Frontend now preserves PNG format to avoid conversion
     if (format !== 'png') {
-      console.error(`Unsupported image format: ${format}. Please convert to PNG.`);
+      console.error(`⚠️  Unsupported format: ${format} - CV requires PNG. Frontend should preserve PNG format.`);
       return null;
     }
-
-    console.log(`  → Decoding ${format.toUpperCase()} image...`);
 
     // Decode base64 to binary
     const binaryString = atob(base64Data);
@@ -51,13 +52,14 @@ async function decodeImage(imageData: string): Promise<{ pixels: Uint8Array; wid
 
     console.log(`  → Image data size: ${bytes.length} bytes`);
 
-    // Decode PNG using JSR package (returns a Promise)
+    // Decode PNG
+    console.log('  → Decoding PNG...');
     const pngResult = await decodePNG(bytes);
-    const pixels = pngResult.body; // Raw pixel data
+    const pixels = pngResult.body;
     const width = pngResult.header.width;
     const height = pngResult.header.height;
 
-    console.log(`  → Image dimensions: ${width}x${height}px`);
+    console.log(`  → Final dimensions: ${width}x${height}px (${pixels.length} bytes)`);
     return {
       pixels,
       width,
@@ -272,19 +274,21 @@ export async function detectRoomBoundaries(imageData: string): Promise<RoomConto
 
     // Find connected components (room regions)
     console.log('  → Finding connected components...');
-    const minArea = Math.floor((width * height) * 0.01); // At least 1% of image
+    const minArea = Math.floor((width * height) * 0.005); // At least 0.5% of image (more sensitive)
     const components = findConnectedComponents(edges, width, height, minArea);
 
-    console.log(`  → Found ${components.length} potential room regions`);
+    console.log(`  → Found ${components.length} potential room regions (before filtering)`);
 
     // Filter components by reasonable size
     const filtered = components.filter(c => {
       const area = c.bbox.width * c.bbox.height;
       const imageArea = width * height;
       const areaRatio = area / imageArea;
-      // Room should be between 3% and 50% of image
-      return areaRatio >= 0.03 && areaRatio <= 0.5;
+      // Room should be between 1% and 60% of image (more tolerant)
+      return areaRatio >= 0.01 && areaRatio <= 0.6;
     });
+
+    console.log(`  → Retained ${filtered.length} components after size/aspect filtering`);
 
     if (filtered.length === 0) {
       console.log('⚠️  No valid room boundaries detected - image may be too dark/light or low quality');

@@ -81,7 +81,10 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
     const ctx = canvas.getContext('2d');
     if (!ctx) return dataUrl;
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', QUALITY);
+    
+    // Preserve PNG format if original was PNG (better for floorplan linework)
+    const isPng = file.type === 'image/png';
+    return canvas.toDataURL(isPng ? 'image/png' : 'image/jpeg', QUALITY);
   }, []);
 
   const handleFile = useCallback(async (file: File) => {
