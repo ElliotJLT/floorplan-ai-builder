@@ -4,15 +4,192 @@ import type {
   ParsedRoomData,
   AIFloorplanResponse,
   AdjacencyRelation,
-  EdgeDirection
+  EdgeDirection,
+  UnifiedRoomData
 } from '@/types/floorplan';
 
 const WALL_THICKNESS = 0.1; // meters
 
+// ============================================================================
+// Image-Based Positioning Functions
+// ============================================================================
+
 /**
- * Main layout algorithm - uses BFS with adjacency data if available
+ * Calculate the scale factor (pixels per meter) from a room's dimensions
+ * Uses both width and depth to get average scale
+ */
+function calculateScale(room: UnifiedRoomData): number | null {
+  if (!room.bbox || !room.width || !room.depth) {
+    return null;
+  }
+
+  // Calculate pixels per meter for both dimensions
+  const pixelsPerMeterWidth = room.bbox.width / room.width;
+  const pixelsPerMeterDepth = room.bbox.height / room.depth;
+
+  // Average the two to handle any slight distortions
+  const avgScale = (pixelsPerMeterWidth + pixelsPerMeterDepth) / 2;
+
+  // Sanity check: scale should be reasonable (typical: 20-200 pixels per meter)
+  if (avgScale < 5 || avgScale > 500) {
+    console.warn(`Unusual scale detected: ${avgScale} pixels/meter for room ${room.id}`);
+    return null;
+  }
+
+  return avgScale;
+}
+
+/**
+ * Calculate global scale factor from all rooms
+ * Returns median scale to be robust against outliers
+ */
+function calculateGlobalScale(rooms: UnifiedRoomData[]): number | null {
+  const scales: number[] = [];
+
+  for (const room of rooms) {
+    const scale = calculateScale(room);
+    if (scale !== null) {
+      scales.push(scale);
+    }
+  }
+
+  if (scales.length === 0) {
+    return null;
+  }
+
+  // Use median for robustness
+  scales.sort((a, b) => a - b);
+  const mid = Math.floor(scales.length / 2);
+  const medianScale = scales.length % 2 === 0
+    ? (scales[mid - 1] + scales[mid]) / 2
+    : scales[mid];
+
+  console.log(`Global scale calibration: ${medianScale.toFixed(2)} pixels/meter (from ${scales.length} rooms)`);
+  return medianScale;
+}
+
+/**
+ * Convert pixel coordinates to 3D world coordinates
+ * Image origin (0,0) is top-left
+ * World origin is center of floorplan
+ */
+function pixelToWorld(
+  pixelPos: { x: number; y: number },
+  scale: number,
+  imageOrigin: { x: number; y: number }
+): [number, number, number] {
+  // Convert from image space to world space
+  // X-axis: image x → world x (right is positive)
+  // Z-axis: image y → world z (down is negative, since image Y increases downward)
+
+  const worldX = (pixelPos.x - imageOrigin.x) / scale;
+  const worldZ = (pixelPos.y - imageOrigin.y) / scale;
+
+  return [worldX, 0, worldZ];
+}
+
+/**
+ * Find the image origin (center point) from room centroids
+ * This centers the floorplan around (0, 0) in world space
+ */
+function calculateImageOrigin(rooms: UnifiedRoomData[]): { x: number; y: number } {
+  const validRooms = rooms.filter(r => r.centroid);
+
+  if (validRooms.length === 0) {
+    return { x: 0, y: 0 };
+  }
+
+  const sumX = validRooms.reduce((sum, r) => sum + r.centroid.x, 0);
+  const sumY = validRooms.reduce((sum, r) => sum + r.centroid.y, 0);
+
+  return {
+    x: sumX / validRooms.length,
+    y: sumY / validRooms.length
+  };
+}
+
+/**
+ * Image-based layout algorithm using actual pixel positions from CV
+ * This is the primary method - most accurate as it preserves real floorplan layout
+ */
+function arrangeFromImagePositions(aiResponse: AIFloorplanResponse): FloorplanData | null {
+  const { rooms, ceilingHeight } = aiResponse;
+
+  // Check if we have pixel data for all rooms
+  const roomsWithPixelData = rooms.filter(r => r.centroid && r.bbox);
+
+  if (roomsWithPixelData.length < rooms.length * 0.5) {
+    console.log(`Only ${roomsWithPixelData.length}/${rooms.length} rooms have pixel data, falling back`);
+    return null;
+  }
+
+  // Calculate global scale factor
+  const scale = calculateGlobalScale(roomsWithPixelData);
+  if (!scale) {
+    console.log('Could not calculate scale, falling back');
+    return null;
+  }
+
+  // Calculate image origin (center point)
+  const imageOrigin = calculateImageOrigin(roomsWithPixelData);
+  console.log(`Image origin: (${imageOrigin.x.toFixed(1)}, ${imageOrigin.y.toFixed(1)}) pixels`);
+
+  // Position each room using its pixel centroid
+  const finalRooms: Room[] = [];
+
+  for (const room of rooms) {
+    if (!room.centroid) {
+      console.warn(`Room ${room.id} missing centroid, placing at origin`);
+      finalRooms.push({
+        id: room.id,
+        name: room.name,
+        position: [0, 0, 0],
+        dimensions: [room.width, ceilingHeight, room.depth],
+        color: room.color,
+        originalMeasurements: room.originalMeasurements
+      });
+      continue;
+    }
+
+    // Convert pixel position to world coordinates
+    const position = pixelToWorld(room.centroid, scale, imageOrigin);
+
+    finalRooms.push({
+      id: room.id,
+      name: room.name,
+      position: position,
+      dimensions: [room.width, ceilingHeight, room.depth],
+      color: room.color,
+      originalMeasurements: room.originalMeasurements
+    });
+  }
+
+  console.log(`Image-based layout positioned ${finalRooms.length} rooms using pixel coordinates`);
+  console.log(`Scale: ${scale.toFixed(2)} pixels/meter`);
+
+  return {
+    id: aiResponse.id,
+    address: aiResponse.address,
+    totalAreaSqFt: aiResponse.totalAreaSqFt,
+    totalAreaSqM: aiResponse.totalAreaSqM,
+    ceilingHeight: aiResponse.ceilingHeight,
+    rooms: finalRooms
+  };
+}
+
+/**
+ * Main layout algorithm - tries multiple strategies in order of accuracy:
+ * 1. Image-based positioning (most accurate - uses actual pixel positions)
+ * 2. BFS with adjacency (accurate topology but calculated positions)
+ * 3. Grid layout with UK conventions (fallback)
  */
 export function calculateConnectedLayout(aiResponse: AIFloorplanResponse): FloorplanData {
+  // Try image-based positioning first (most accurate)
+  const imageBasedLayout = arrangeFromImagePositions(aiResponse);
+  if (imageBasedLayout) {
+    console.log('✓ Using image-based positioning (preserves actual floorplan layout)');
+    return imageBasedLayout;
+  }
   // If we have adjacency data, use BFS layout algorithm
   if (aiResponse.adjacency && aiResponse.adjacency.length > 0) {
     console.log('Using BFS layout with adjacency data');
