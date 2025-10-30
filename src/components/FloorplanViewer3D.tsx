@@ -350,7 +350,7 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
 
   return (
     <div className="relative w-full h-screen" style={{
-      background: 'linear-gradient(135deg, rgba(101, 67, 33, 0.3) 0%, rgba(15, 23, 42, 0.95) 100%)'
+      background: 'linear-gradient(160deg, #8B7355 0%, #6B5D52 25%, #4A4339 50%, #2D2A27 75%, #1A1816 100%)'
     }}>
       {/* Top Bar with gradient overlay */}
       <div className="absolute top-0 left-0 right-0 z-10 pt-8 pb-16 px-12" style={{
