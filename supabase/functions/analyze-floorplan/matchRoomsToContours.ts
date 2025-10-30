@@ -209,6 +209,9 @@ export function matchRoomsToContours(
 /**
  * Fallback: Generate synthetic contour data from Claude dimensions
  * Used when computer vision fails or returns no contours
+ *
+ * NEW: Uses Claude's labelPosition data to create spatially-accurate layout
+ * instead of arbitrary grid placement
  */
 export function generateSyntheticContours(
   claudeRooms: ParsedRoomData[],
@@ -216,32 +219,42 @@ export function generateSyntheticContours(
   imageHeight: number = 1000
 ): UnifiedRoomData[] {
 
-  console.warn('Generating synthetic contours from Claude data (CV fallback mode)');
+  console.warn('Generating synthetic contours from Claude spatial data (CV fallback mode)');
+  console.log('Using Claude labelPosition coordinates for accurate spatial layout');
 
-  return claudeRooms.map((room, index) => {
-    // Create synthetic geometry based on room dimensions
-    // This is a simple grid layout for fallback purposes
-    const cols = Math.ceil(Math.sqrt(claudeRooms.length));
-    const row = Math.floor(index / cols);
-    const col = index % cols;
+  // Calculate a scaling factor to convert room dimensions (meters) to pixels
+  // We'll use the average room size to determine appropriate pixel scale
+  const totalArea = claudeRooms.reduce((sum, r) => sum + (r.width * r.depth), 0);
+  const avgRoomArea = totalArea / claudeRooms.length;
+  const targetPixelsPerRoom = (imageWidth * imageHeight) / (claudeRooms.length * 4); // rooms take ~25% of image
+  const pixelsPerSqMeter = Math.sqrt(targetPixelsPerRoom / avgRoomArea);
 
-    const cellWidth = imageWidth / cols;
-    const cellHeight = imageHeight / Math.ceil(claudeRooms.length / cols);
+  console.log(`Calculated scale: ${pixelsPerSqMeter.toFixed(2)} pixels per meter`);
 
-    // Use room dimensions to scale the synthetic bbox
-    const aspectRatio = room.width / room.depth;
-    let bboxWidth = cellWidth * 0.8;
-    let bboxHeight = bboxWidth / aspectRatio;
+  // Separate rooms with and without labelPosition
+  const roomsWithLabels = claudeRooms.filter(r => r.labelPosition);
+  const roomsWithoutLabels = claudeRooms.filter(r => !r.labelPosition);
 
-    if (bboxHeight > cellHeight * 0.8) {
-      bboxHeight = cellHeight * 0.8;
-      bboxWidth = bboxHeight * aspectRatio;
-    }
+  if (roomsWithoutLabels.length > 0) {
+    console.warn(`${roomsWithoutLabels.length} rooms missing labelPosition, will use fallback positioning`);
+  }
 
-    const x = col * cellWidth + (cellWidth - bboxWidth) / 2;
-    const y = row * cellHeight + (cellHeight - bboxHeight) / 2;
+  const unified: UnifiedRoomData[] = [];
 
-    return {
+  // Process rooms with labelPosition - use Claude's spatial understanding
+  for (const room of roomsWithLabels) {
+    // Convert room dimensions from meters to pixels
+    const bboxWidth = room.width * pixelsPerSqMeter;
+    const bboxHeight = room.depth * pixelsPerSqMeter;
+
+    // Use labelPosition as the centroid (Claude places labels in room centers)
+    const centroid = room.labelPosition!;
+
+    // Calculate bbox from centroid
+    const x = centroid.x - bboxWidth / 2;
+    const y = centroid.y - bboxHeight / 2;
+
+    unified.push({
       ...room,
       bbox: {
         x: Math.round(x),
@@ -250,10 +263,62 @@ export function generateSyntheticContours(
         height: Math.round(bboxHeight)
       },
       centroid: {
-        x: Math.round(x + bboxWidth / 2),
-        y: Math.round(y + bboxHeight / 2)
+        x: Math.round(centroid.x),
+        y: Math.round(centroid.y)
       },
       areaPixels: Math.round(bboxWidth * bboxHeight)
-    };
-  });
+    });
+
+    console.log(
+      `✓ Positioned "${room.name}" at (${Math.round(centroid.x)}, ${Math.round(centroid.y)}) ` +
+      `[${Math.round(bboxWidth)}×${Math.round(bboxHeight)}px from ${room.width}×${room.depth}m]`
+    );
+  }
+
+  // Fallback for rooms without labelPosition - use grid layout
+  if (roomsWithoutLabels.length > 0) {
+    console.warn('Using grid fallback for rooms without spatial data');
+
+    const cols = Math.ceil(Math.sqrt(roomsWithoutLabels.length));
+
+    roomsWithoutLabels.forEach((room, index) => {
+      const row = Math.floor(index / cols);
+      const col = index % cols;
+
+      const cellWidth = imageWidth / cols;
+      const cellHeight = imageHeight / Math.ceil(roomsWithoutLabels.length / cols);
+
+      const aspectRatio = room.width / room.depth;
+      let bboxWidth = cellWidth * 0.8;
+      let bboxHeight = bboxWidth / aspectRatio;
+
+      if (bboxHeight > cellHeight * 0.8) {
+        bboxHeight = cellHeight * 0.8;
+        bboxWidth = bboxHeight * aspectRatio;
+      }
+
+      const x = col * cellWidth + (cellWidth - bboxWidth) / 2;
+      const y = row * cellHeight + (cellHeight - bboxHeight) / 2;
+
+      unified.push({
+        ...room,
+        bbox: {
+          x: Math.round(x),
+          y: Math.round(y),
+          width: Math.round(bboxWidth),
+          height: Math.round(bboxHeight)
+        },
+        centroid: {
+          x: Math.round(x + bboxWidth / 2),
+          y: Math.round(y + bboxHeight / 2)
+        },
+        areaPixels: Math.round(bboxWidth * bboxHeight)
+      });
+
+      console.log(`⚠ Positioned "${room.name}" using grid fallback`);
+    });
+  }
+
+  console.log(`✓ Generated ${unified.length} synthetic contours using Claude's spatial understanding`);
+  return unified;
 }

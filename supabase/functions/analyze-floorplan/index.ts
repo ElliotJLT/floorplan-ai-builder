@@ -197,18 +197,61 @@ DUPLICATE PREVENTION (CRITICAL):
     let jsonText = content;
     if (content.includes('```json')) {
       jsonText = content.split('```json')[1].split('```')[0].trim();
+      console.log('Extracted JSON from markdown code block');
     } else if (content.includes('```')) {
       jsonText = content.split('```')[1].split('```')[0].trim();
+      console.log('Extracted JSON from generic code block');
     }
 
-    const claudeData = JSON.parse(jsonText);
-    console.log(`✓ Extracted ${claudeData.rooms?.length} room labels from Claude`);
+    // Parse and validate Claude's response
+    let claudeData;
+    try {
+      claudeData = JSON.parse(jsonText);
+    } catch (parseError) {
+      console.error('Failed to parse Claude response as JSON:', parseError);
+      console.error('Raw content preview:', content.substring(0, 500));
+      throw new Error('Invalid JSON response from Claude Vision API');
+    }
+
+    // Validate response structure
+    if (!claudeData.rooms || !Array.isArray(claudeData.rooms)) {
+      console.error('Invalid response structure - missing or invalid rooms array');
+      console.error('Response keys:', Object.keys(claudeData));
+      throw new Error('Claude response missing required "rooms" array');
+    }
+
+    console.log(`✓ Extracted ${claudeData.rooms.length} room labels from Claude`);
+    console.log(`  Total area: ${claudeData.totalAreaSqM}sqM (${claudeData.totalAreaSqFt}sqFt)`);
+    console.log(`  Entry room: ${claudeData.entryRoomId}`);
 
     // Post-process: Remove duplicate rooms with aggressive normalization
+    console.log('\n--- Duplicate Detection & Validation ---');
     const seenRooms = new Map<string, any>(); // normalized name -> room data
     const originalCount = claudeData.rooms.length;
 
-    // Helper: Normalize room name for comparison (MORE AGGRESSIVE)
+    // Validate that all rooms have required fields
+    let missingLabelCount = 0;
+    let missingDimensionsCount = 0;
+    for (const room of claudeData.rooms) {
+      if (!room.labelPosition) {
+        missingLabelCount++;
+        console.warn(`⚠ Room "${room.name}" (${room.id}) missing labelPosition`);
+      }
+      if (!room.width || !room.depth) {
+        missingDimensionsCount++;
+        console.warn(`⚠ Room "${room.name}" (${room.id}) missing dimensions`);
+      }
+    }
+
+    if (missingLabelCount > 0) {
+      console.warn(`${missingLabelCount}/${originalCount} rooms missing spatial coordinates`);
+    }
+    if (missingDimensionsCount > 0) {
+      console.error(`${missingDimensionsCount}/${originalCount} rooms missing dimensions - layout may be inaccurate`);
+    }
+
+    // Helper: Normalize room name for comparison
+    // IMPROVED: Less aggressive to preserve meaningful distinctions
     function normalizeRoomName(name: string): string {
       return name
         .toLowerCase()
@@ -217,10 +260,10 @@ DUPLICATE PREVENTION (CRITICAL):
         .replace(/bathroom(\d)/g, 'bath$1')
         .replace(/reception/g, 'living') // Treat reception = living
         .replace(/lounge/g, 'living')
-        .replace(/dining/g, '') // Remove dining to catch "living/dining" = "living"
         .replace(/room/g, '') // Remove "room" word
-        .replace(/kitchen/g, 'kit') // Shorten kitchen
         .replace(/wc/g, 'bathroom'); // WC = bathroom
+        // NOTE: Removed overly aggressive rules like removing "dining" and "kitchen"
+        // to prevent false duplicates (e.g., "Living/Dining" vs "Kitchen/Dining")
     }
 
     // Helper: Check if two rooms are likely duplicates based on area
@@ -240,18 +283,27 @@ DUPLICATE PREVENTION (CRITICAL):
         const existingArea = existingRoom.width * existingRoom.depth;
         const similarity = areaSimilarity(area, existingArea);
 
-        if (similarity > 0.9) {
-          // Very similar (>90%) - likely a duplicate
-          console.warn(`⚠ Duplicate room detected and removed: "${room.name}" (similar to "${existingRoom.name}", ${(similarity * 100).toFixed(0)}% area match)`);
+        // FIXED: Lowered threshold from 0.9 to 0.7 (70% similarity = likely duplicate)
+        if (similarity > 0.7) {
+          // Likely a duplicate (>70% area match)
+          console.warn(`⚠ Duplicate room detected: "${room.name}" (similar to "${existingRoom.name}", ${(similarity * 100).toFixed(0)}% area match)`);
 
           // Keep the one with more complete data or longer name (often has more info)
           if (room.name.length > existingRoom.name.length || !existingRoom.labelPosition) {
             console.log(`  → Replacing with better version: "${room.name}"`);
+            // CRITICAL FIX: Ensure the replacement room has a unique ID
+            // If the existing room had a suffixed ID, preserve that pattern
+            const existingId = existingRoom.id;
+            if (existingId !== room.id) {
+              room.id = existingId; // Keep the same ID to maintain consistency
+            }
             seenRooms.set(normalized, room);
+          } else {
+            console.log(`  → Keeping existing version: "${existingRoom.name}"`);
           }
         } else {
-          // Different areas - might be genuinely different rooms (e.g., Bedroom 1 vs Bedroom 2)
-          console.log(`⚠ Potential duplicate with different size: "${room.name}" vs "${existingRoom.name}" (${(similarity * 100).toFixed(0)}% match)`);
+          // Different areas - genuinely different rooms (e.g., Bedroom 1 vs Bedroom 2)
+          console.log(`ℹ Different room with similar name: "${room.name}" vs "${existingRoom.name}" (${(similarity * 100).toFixed(0)}% area match)`);
           // Add a suffix to make it unique AND update the room ID
           let suffix = 2;
           let uniqueKey = `${normalized}${suffix}`;
@@ -272,8 +324,26 @@ DUPLICATE PREVENTION (CRITICAL):
 
     claudeData.rooms = Array.from(seenRooms.values());
 
-    if (originalCount !== claudeData.rooms.length) {
-      console.log(`✓ Processed ${originalCount - claudeData.rooms.length} duplicate room(s)`);
+    const finalCount = claudeData.rooms.length;
+    if (originalCount !== finalCount) {
+      console.log(`✓ Removed ${originalCount - finalCount} duplicate room(s) (${originalCount} → ${finalCount})`);
+    } else {
+      console.log('✓ No duplicates detected');
+    }
+
+    // Final validation: check for unique IDs
+    const idSet = new Set(claudeData.rooms.map(r => r.id));
+    if (idSet.size !== claudeData.rooms.length) {
+      console.error('⚠ WARNING: Duplicate room IDs detected after deduplication!');
+      const idCounts = new Map<string, number>();
+      claudeData.rooms.forEach(r => {
+        idCounts.set(r.id, (idCounts.get(r.id) || 0) + 1);
+      });
+      idCounts.forEach((count, id) => {
+        if (count > 1) {
+          console.error(`  → ID "${id}" appears ${count} times`);
+        }
+      });
     }
 
     // ========================================================================
@@ -313,21 +383,32 @@ DUPLICATE PREVENTION (CRITICAL):
     try {
       // Hard timeout to prevent function timeouts when the agent loops too long
       const AGENT_TIMEOUT_MS = 12000;
+      console.log(`Starting agentic adjacency with ${AGENT_TIMEOUT_MS}ms timeout...`);
+
       const agentPromise = determineAdjacencyWithAgent(unifiedRooms, CLAUDE_API_KEY);
       adjacency = await Promise.race([
         agentPromise,
         new Promise((_, reject) => setTimeout(() => reject(new Error('agent_timeout')), AGENT_TIMEOUT_MS))
       ]) as any[];
+
       console.log(`✓ Agent determined ${adjacency.length} adjacency relationships`);
 
       // Fallback to geometric if agent returns nothing
       if (adjacency.length === 0 && unifiedRooms.length > 1) {
-        console.warn('Agent returned no adjacencies, using geometric fallback');
+        console.warn('Agent returned no adjacencies (possible for disconnected rooms), using geometric fallback');
         adjacency = detectAdjacencyGeometric(unifiedRooms);
       }
     } catch (error) {
-      console.error('Agentic verification failed or timed out, using geometric fallback:', error);
-      adjacency = detectAdjacencyGeometric(unifiedRooms);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`Agentic verification ${errorMsg === 'agent_timeout' ? 'timed out' : 'failed'}: ${errorMsg}`);
+      console.log('Falling back to geometric adjacency detection...');
+
+      try {
+        adjacency = detectAdjacencyGeometric(unifiedRooms);
+      } catch (fallbackError) {
+        console.error('Geometric fallback also failed:', fallbackError);
+        adjacency = []; // Return empty adjacency list rather than failing completely
+      }
     }
 
     // ========================================================================
@@ -366,11 +447,14 @@ DUPLICATE PREVENTION (CRITICAL):
       }
     };
 
-    console.log('Pipeline summary:', {
-      rooms: response_data.rooms.length,
-      adjacencies: response_data.adjacency.length,
-      method: response_data.metadata.method
-    });
+    console.log('\n=== PIPELINE SUMMARY ===');
+    console.log(`Rooms detected: ${response_data.rooms.length}`);
+    console.log(`Adjacencies found: ${response_data.adjacency.length}`);
+    console.log(`Method: ${response_data.metadata.method}`);
+    console.log(`CV contours: ${response_data.metadata.contoursDetected}`);
+    console.log(`Synthetic contours: ${response_data.metadata.usedSyntheticContours ? 'Yes' : 'No'}`);
+    console.log(`Total area: ${response_data.totalAreaSqM}sqM (${response_data.totalAreaSqFt}sqFt)`);
+    console.log('========================\n');
 
     return new Response(
       JSON.stringify(response_data),
