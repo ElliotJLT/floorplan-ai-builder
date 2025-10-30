@@ -117,12 +117,19 @@ CRITICAL RULES:
 - labelPosition is REQUIRED for each room - estimate pixel coordinates carefully
 - DO NOT include adjacency data - spatial relationships will be calculated separately
 
-DUPLICATE PREVENTION:
-- Each room should appear ONLY ONCE in the rooms array
-- If a space serves multiple purposes (e.g., "Kitchen/Dining Room"), use the primary function name
-- DO NOT create separate entries for combined spaces
-- Example: "Kitchen/Dining Room" → use id: "kitchen", name: "Kitchen/Dining Room"
-- Common duplicates to avoid: Kitchen + Dining Room, Living + Reception, Bathroom + WC (unless genuinely separate rooms)`;
+DUPLICATE PREVENTION (CRITICAL):
+- Each room should appear ONLY ONCE in the rooms array - NO EXCEPTIONS
+- If a space serves multiple purposes (e.g., "Kitchen/Dining Room"), treat it as ONE room
+  * Use the primary function for the ID
+  * Keep the full descriptive name
+  * Example: id: "kitchen-dining", name: "Kitchen/Dining Room"
+- DO NOT create separate entries for:
+  * Kitchen + Dining (if they're one open space)
+  * Living + Reception (same room, different names)
+  * Bathroom + WC (unless they're genuinely separate rooms)
+  * Bedroom + Dressing area (part of the same bedroom)
+- DOUBLE CHECK: Count your rooms before submitting - each physical space = 1 entry
+- If you see "Reception/Living Room" or similar, that's ONE room, not two`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -197,24 +204,69 @@ DUPLICATE PREVENTION:
     const claudeData = JSON.parse(jsonText);
     console.log(`✓ Extracted ${claudeData.rooms?.length} room labels from Claude`);
 
-    // Post-process: Remove duplicate rooms
-    const seenNames = new Set<string>();
+    // Post-process: Remove duplicate rooms with aggressive normalization
+    const seenRooms = new Map<string, any>(); // normalized name -> room data
     const originalCount = claudeData.rooms.length;
-    claudeData.rooms = claudeData.rooms.filter((room: any) => {
-      // Normalize room name for comparison (lowercase, remove non-alphanumeric)
-      const normalized = room.name.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-      if (seenNames.has(normalized)) {
-        console.warn(`⚠ Duplicate room detected and removed: ${room.name}`);
-        return false;
+    // Helper: Normalize room name for comparison
+    function normalizeRoomName(name: string): string {
+      return name
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '') // Remove all non-alphanumeric
+        .replace(/bedroom(\d)/g, 'bed$1') // bed1, bed2, etc.
+        .replace(/bathroom(\d)/g, 'bath$1')
+        .replace(/reception/g, 'living') // Treat reception = living
+        .replace(/lounge/g, 'living')
+        .replace(/wc/g, 'bathroom'); // WC = bathroom
+    }
+
+    // Helper: Check if two rooms are likely duplicates based on area
+    function areaSimilarity(area1: number, area2: number): number {
+      const diff = Math.abs(area1 - area2);
+      const avg = (area1 + area2) / 2;
+      return 1 - (diff / avg); // 1.0 = identical, 0.0 = completely different
+    }
+
+    for (const room of claudeData.rooms) {
+      const normalized = normalizeRoomName(room.name);
+      const area = room.width * room.depth;
+
+      if (seenRooms.has(normalized)) {
+        // Potential duplicate - check area similarity
+        const existingRoom = seenRooms.get(normalized);
+        const existingArea = existingRoom.width * existingRoom.depth;
+        const similarity = areaSimilarity(area, existingArea);
+
+        if (similarity > 0.8) {
+          // Very similar - likely a duplicate
+          console.warn(`⚠ Duplicate room detected and removed: "${room.name}" (similar to "${existingRoom.name}", ${(similarity * 100).toFixed(0)}% area match)`);
+
+          // Keep the one with more complete data or longer name (often has more info)
+          if (room.name.length > existingRoom.name.length || !existingRoom.labelPosition) {
+            console.log(`  → Replacing with better version: "${room.name}"`);
+            seenRooms.set(normalized, room);
+          }
+        } else {
+          // Different areas - might be genuinely different rooms (e.g., Bedroom 1 vs Bedroom 2)
+          console.log(`⚠ Potential duplicate with different size: "${room.name}" vs "${existingRoom.name}" (${(similarity * 100).toFixed(0)}% match)`);
+          // Add a suffix to make it unique
+          let suffix = 2;
+          let uniqueKey = `${normalized}${suffix}`;
+          while (seenRooms.has(uniqueKey)) {
+            suffix++;
+            uniqueKey = `${normalized}${suffix}`;
+          }
+          seenRooms.set(uniqueKey, room);
+        }
+      } else {
+        seenRooms.set(normalized, room);
       }
+    }
 
-      seenNames.add(normalized);
-      return true;
-    });
+    claudeData.rooms = Array.from(seenRooms.values());
 
     if (originalCount !== claudeData.rooms.length) {
-      console.log(`✓ Removed ${originalCount - claudeData.rooms.length} duplicate room(s)`);
+      console.log(`✓ Processed ${originalCount - claudeData.rooms.length} duplicate room(s)`);
     }
 
     // ========================================================================
@@ -223,6 +275,8 @@ DUPLICATE PREVENTION:
     console.log('\n--- STAGE 3: Matching Labels to Contours ---');
 
     let unifiedRooms;
+    let usedSyntheticContours = false;
+
     if (contours.length > 0) {
       unifiedRooms = matchRoomsToContours(claudeData.rooms, contours);
       console.log(`✓ Successfully matched ${unifiedRooms.length}/${claudeData.rooms.length} rooms`);
@@ -231,10 +285,12 @@ DUPLICATE PREVENTION:
       if (unifiedRooms.length < claudeData.rooms.length * 0.5) {
         console.warn('Matching rate too low, falling back to synthetic contours');
         unifiedRooms = generateSyntheticContours(claudeData.rooms);
+        usedSyntheticContours = true;
       }
     } else {
       console.warn('No CV contours detected, using synthetic contours');
       unifiedRooms = generateSyntheticContours(claudeData.rooms);
+      usedSyntheticContours = true;
     }
 
     // ========================================================================
@@ -288,6 +344,7 @@ DUPLICATE PREVENTION:
         contoursDetected: contours.length,
         roomsMatched: unifiedRooms.length,
         adjacenciesFound: adjacency.length,
+        usedSyntheticContours: usedSyntheticContours,
         pipeline: 'cv-detection → claude-labels → matching → agentic-adjacency'
       }
     };

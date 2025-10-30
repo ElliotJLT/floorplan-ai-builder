@@ -219,20 +219,32 @@ export async function detectRoomBoundaries(imageData: string): Promise<RoomConto
     // Step 5: Filter and convert to room contours
     const imageArea = width * height;
     const roomContours: RoomContour[] = [];
+    let filtered = { tooSmall: 0, tooLarge: 0, badAspect: 0 };
 
     for (const component of components) {
       const area = component.pixels.length;
+      const areaPercentage = (area / imageArea) * 100;
 
-      // Filter: room must be 0.5% - 40% of image area
+      // Filter: room must be 0.2% - 50% of image area (relaxed from 0.5% - 40%)
       // This removes noise (too small) and the entire floorplan border (too large)
-      if (area < imageArea * 0.005 || area > imageArea * 0.4) {
+      if (area < imageArea * 0.002) {
+        filtered.tooSmall++;
+        console.log(`Filtered (too small): ${areaPercentage.toFixed(2)}% of image (${area} pixels)`);
         continue;
       }
 
-      // Filter: aspect ratio should be reasonable (not too thin)
+      if (area > imageArea * 0.5) {
+        filtered.tooLarge++;
+        console.log(`Filtered (too large): ${areaPercentage.toFixed(2)}% of image (${area} pixels)`);
+        continue;
+      }
+
+      // Filter: aspect ratio should be reasonable (relaxed from 0.1-10 to 0.05-15)
       const aspectRatio = component.bbox.width / component.bbox.height;
-      if (aspectRatio < 0.1 || aspectRatio > 10) {
-        continue; // Likely a line or artifact
+      if (aspectRatio < 0.05 || aspectRatio > 15) {
+        filtered.badAspect++;
+        console.log(`Filtered (bad aspect): ${aspectRatio.toFixed(2)} ratio, bbox: ${component.bbox.width}x${component.bbox.height}`);
+        continue;
       }
 
       // Calculate centroid
@@ -259,6 +271,14 @@ export async function detectRoomBoundaries(imageData: string): Promise<RoomConto
     roomContours.sort((a, b) => b.area - a.area);
 
     console.log(`Detected ${roomContours.length} valid room boundaries`);
+    console.log(`Filtered: ${filtered.tooSmall} too small, ${filtered.tooLarge} too large, ${filtered.badAspect} bad aspect`);
+
+    // Log detected contour details
+    roomContours.forEach((contour, idx) => {
+      const areaPercent = ((contour.area / imageArea) * 100).toFixed(2);
+      console.log(`  Contour ${idx}: ${contour.bbox.width}x${contour.bbox.height} @ (${contour.centroid.x}, ${contour.centroid.y}), area: ${areaPercent}%`);
+    });
+
     return roomContours;
 
   } catch (error) {

@@ -107,6 +107,15 @@ export interface AIFloorplanResponse {
   rooms: UnifiedRoomData[];
   /** Optional adjacency data (used for layout fallback) */
   adjacency?: AdjacencyRelation[];
+  /** Metadata about the detection pipeline */
+  metadata?: {
+    method?: string;
+    contoursDetected?: number;
+    roomsMatched?: number;
+    adjacenciesFound?: number;
+    usedSyntheticContours?: boolean;
+    pipeline?: string;
+  };
 }
 
 // ============================================================================

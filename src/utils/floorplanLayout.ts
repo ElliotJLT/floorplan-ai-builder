@@ -184,20 +184,37 @@ function arrangeFromImagePositions(aiResponse: AIFloorplanResponse): FloorplanDa
  * 3. Grid layout with UK conventions (fallback)
  */
 export function calculateConnectedLayout(aiResponse: AIFloorplanResponse): FloorplanData {
-  // Try image-based positioning first (most accurate)
+  // Check if synthetic contours were used - if so, skip image-based positioning
+  if (aiResponse.metadata?.usedSyntheticContours) {
+    console.log('⚠ Synthetic contours detected - skipping image-based positioning');
+    console.log('  (Synthetic contours have fake pixel data that does not match the real floorplan)');
+
+    // If we have adjacency data, use BFS layout algorithm
+    if (aiResponse.adjacency && aiResponse.adjacency.length > 0) {
+      console.log('✓ Using BFS layout with adjacency data');
+      return arrangeWithBFS(aiResponse);
+    }
+
+    // Fallback to grid-based layout
+    console.log('✓ Using intelligent grid layout (no adjacency data)');
+    return arrangeInGrid(aiResponse);
+  }
+
+  // Try image-based positioning first (most accurate) - only when we have real CV data
   const imageBasedLayout = arrangeFromImagePositions(aiResponse);
   if (imageBasedLayout) {
     console.log('✓ Using image-based positioning (preserves actual floorplan layout)');
     return imageBasedLayout;
   }
+
   // If we have adjacency data, use BFS layout algorithm
   if (aiResponse.adjacency && aiResponse.adjacency.length > 0) {
-    console.log('Using BFS layout with adjacency data');
+    console.log('✓ Using BFS layout with adjacency data');
     return arrangeWithBFS(aiResponse);
   }
 
   // Fallback to grid-based layout
-  console.log('Using intelligent clustering layout (no adjacency data)');
+  console.log('✓ Using intelligent grid layout (no adjacency data)');
   return arrangeInGrid(aiResponse);
 }
 
