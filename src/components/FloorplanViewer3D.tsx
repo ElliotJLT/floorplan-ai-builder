@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, PerspectiveCamera, Text } from "@react-three/drei";
+import { OrbitControls, PerspectiveCamera, Text, Line } from "@react-three/drei";
 import * as THREE from "three";
 import { Button } from "@/components/ui/button";
-import { Home, Move, RotateCcw } from "lucide-react";
+import { Home, Move, RotateCcw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Room as RoomType, FloorplanData } from "@/types/floorplan";
+import { validateLayout } from "@/utils/floorplanLayout";
 
 const Room3D = ({ room, isSelected, onSelect }: { room: RoomType; isSelected: boolean; onSelect: () => void }) => {
   const [hovered, setHovered] = useState(false);
@@ -91,7 +92,10 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [editingRoom, setEditingRoom] = useState<string | null>(null);
   const [localData, setLocalData] = useState(floorplanData);
+  const [showValidation, setShowValidation] = useState(false);
   const controlsRef = useRef<any>();
+
+  const validation = validateLayout(localData);
 
   const handleReset = () => {
     if (controlsRef.current) {
@@ -124,10 +128,29 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
               {floorplanData.rooms.filter(r => r.name.includes('Bedroom')).length} Bed Ground Floor Flat • {floorplanData.totalAreaSqFt} sq ft
             </p>
           </div>
-          <Button onClick={onBack} variant="secondary">
-            <Home className="mr-2 h-4 w-4" />
-            Back to Upload
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => setShowValidation(!showValidation)}
+              variant={validation.isValid ? "secondary" : "destructive"}
+              size="sm"
+            >
+              {validation.isValid ? (
+                <>
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  Valid Layout
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  {validation.overlaps.length} Issues
+                </>
+              )}
+            </Button>
+            <Button onClick={onBack} variant="secondary">
+              <Home className="mr-2 h-4 w-4" />
+              Back to Upload
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -163,6 +186,39 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
             onSelect={() => setSelectedRoom(room.id)}
           />
         ))}
+
+        {/* Validation Visualization */}
+        {showValidation && validation.overlaps.length > 0 && validation.overlaps.map((overlap, idx) => {
+          const r1 = localData.rooms.find(r => r.id === overlap.room1);
+          const r2 = localData.rooms.find(r => r.id === overlap.room2);
+          if (!r1 || !r2) return null;
+          
+          return (
+            <Line
+              key={`overlap-${idx}`}
+              points={[r1.position, r2.position]}
+              color="red"
+              lineWidth={3}
+              dashed
+            />
+          );
+        })}
+
+        {showValidation && validation.gaps.length > 0 && validation.gaps.map((gap, idx) => {
+          const r1 = localData.rooms.find(r => r.id === gap.room1);
+          const r2 = localData.rooms.find(r => r.id === gap.room2);
+          if (!r1 || !r2) return null;
+          
+          return (
+            <Line
+              key={`gap-${idx}`}
+              points={[r1.position, r2.position]}
+              color="yellow"
+              lineWidth={2}
+              dashed
+            />
+          );
+        })}
 
         {/* Ground plane */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>

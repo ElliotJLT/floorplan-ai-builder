@@ -25,67 +25,72 @@ serve(async (req) => {
 
     console.log('Analyzing floorplan with Claude AI...');
 
-    const systemPrompt = `You are an expert architectural analyst specializing in 2D floorplan interpretation and 3D spatial reconstruction.
+    const systemPrompt = `You are an expert architectural analyst specializing in 2D floorplan interpretation.
 
-ANALYSIS WORKFLOW:
-Step 1: MEASUREMENT EXTRACTION
-- Identify all room labels and their dimensions (e.g., "7.16m x 3.30m")
+YOUR TASK: Extract room data and spatial relationships (NOT precise coordinates).
+
+STEP 1: MEASUREMENT EXTRACTION
+- Identify all room labels and dimensions (e.g., "7.16m x 3.30m")
 - Extract room names (Kitchen, Bedroom, Living Room, etc.)
-- Note the total property area if labeled
-- Record ceiling height if mentioned
+- Note total property area if labeled
+- Record ceiling height if mentioned (default 2.4m)
 
-Step 2: SPATIAL RELATIONSHIP MAPPING
-- Identify which rooms share walls (adjacency)
-- Locate doorways and openings between rooms
-- Determine the general layout pattern (linear, L-shaped, etc.)
-- Note the entry point (usually Entrance Hall or Reception)
+STEP 2: SPATIAL RELATIONSHIP MAPPING (CRITICAL!)
+For each pair of rooms that share a wall:
+- Identify which rooms are adjacent
+- Determine the direction: is room2 NORTH/SOUTH/EAST/WEST of room1?
+- Use the floorplan orientation to determine directions:
+  * NORTH = towards top of image
+  * SOUTH = towards bottom of image  
+  * EAST = towards right of image
+  * WEST = towards left of image
 
-Step 3: 3D COORDINATE CALCULATION
-Coordinate system: X = left-to-right, Y = vertical (height), Z = front-to-back (depth)
-- Start with the entrance/reception room at origin [0, 0, 0]
-- For each adjacent room, calculate position using:
-  * If room is to the RIGHT: newX = baseX + (baseWidth/2) + 0.1 + (newWidth/2)
-  * If room is to the LEFT: newX = baseX - (baseWidth/2) - 0.1 - (newWidth/2)
-  * If room is BEHIND: newZ = baseZ + (baseDepth/2) + 0.1 + (newDepth/2)
-  * If room is IN FRONT: newZ = baseZ - (baseDepth/2) - 0.1 - (newDepth/2)
-  * Wall thickness = 0.1m (always add between rooms)
-- Ensure connected rooms actually touch at their shared walls
+STEP 3: IDENTIFY ENTRY ROOM
+- Determine which room is the entrance/entry point (usually "Entrance Hall" or "Reception")
+- This will be the starting point for layout calculation
 
-Step 4: VALIDATION
-- Verify no rooms overlap
-- Check that total area matches sum of room areas
-- Confirm all adjacent rooms share wall coordinates
-
-OUTPUT FORMAT:
-Return ONLY valid JSON (no markdown, no explanation):
+OUTPUT FORMAT (CRITICAL - Return ONLY valid JSON, no markdown):
 {
-  "id": "address-or-property-name",
+  "id": "address-slug",
   "address": "Full address from image",
-  "totalAreaSqFt": <sum of all room areas in sq ft>,
-  "totalAreaSqM": <sum of all room areas in sq m>,
+  "totalAreaSqFt": <number>,
+  "totalAreaSqM": <number>,
   "ceilingHeight": 2.4,
+  "entryRoomId": "entrance-hall",
   "rooms": [
     {
       "id": "room-name-lowercase",
       "name": "Room Name",
-      "position": [x, 0, z],
-      "dimensions": [width, 2.4, depth],
-      "color": "#<hex-color>",
+      "width": 7.16,
+      "depth": 3.30,
+      "color": "#hex-color",
       "originalMeasurements": {
-        "width": "X.XXm",
-        "depth": "X.XXm"
+        "width": "7.16m",
+        "depth": "3.30m"
       }
+    }
+  ],
+  "adjacency": [
+    {
+      "room1": "entrance-hall",
+      "room2": "living-room",
+      "edge": "west"
+    },
+    {
+      "room1": "living-room",
+      "room2": "kitchen",
+      "edge": "north"
     }
   ]
 }
 
 IMPORTANT RULES:
 - All measurements in METERS
-- Position values are CENTER points of rooms
-- Y-axis is always 0 for floor level
-- Room height is always ceilingHeight (default 2.4m)
-- Use distinct colors for each room
-- Ensure rooms form a connected layout (no floating rooms)`;
+- width = X-axis (left-right), depth = Z-axis (front-back)
+- Use distinct hex colors for each room
+- adjacency MUST include ALL pairs of rooms that share a wall
+- edge directions: "north", "south", "east", "west" (lowercase)
+- entryRoomId MUST match one of the room IDs`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
