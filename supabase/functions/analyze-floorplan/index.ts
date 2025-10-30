@@ -359,11 +359,11 @@ VALIDATION BEFORE SUBMITTING:
     }
 
     // Final validation: check for unique IDs
-    const idSet = new Set(claudeData.rooms.map(r => r.id));
+    const idSet = new Set(claudeData.rooms.map((r: any) => r.id));
     if (idSet.size !== claudeData.rooms.length) {
       console.error('⚠ WARNING: Duplicate room IDs detected after deduplication!');
       const idCounts = new Map<string, number>();
-      claudeData.rooms.forEach(r => {
+      claudeData.rooms.forEach((r: any) => {
         idCounts.set(r.id, (idCounts.get(r.id) || 0) + 1);
       });
       idCounts.forEach((count, id) => {
