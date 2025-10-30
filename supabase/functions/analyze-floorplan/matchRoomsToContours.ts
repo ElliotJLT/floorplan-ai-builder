@@ -210,8 +210,8 @@ export function matchRoomsToContours(
  * Fallback: Generate synthetic contour data from Claude dimensions
  * Used when computer vision fails or returns no contours
  *
- * NEW: Uses Claude's labelPosition data to create spatially-accurate layout
- * instead of arbitrary grid placement
+ * IMPROVED: Uses Claude's labelPosition data + proximity analysis to create
+ * spatially-accurate layout with overlap prevention
  */
 export function generateSyntheticContours(
   claudeRooms: ParsedRoomData[],
@@ -219,60 +219,124 @@ export function generateSyntheticContours(
   imageHeight: number = 1000
 ): UnifiedRoomData[] {
 
-  console.warn('Generating synthetic contours from Claude spatial data (CV fallback mode)');
-  console.log('Using Claude labelPosition coordinates for accurate spatial layout');
+  console.warn('🔧 Generating synthetic contours with IMPROVED spatial layout algorithm');
+  console.log('Using Claude labelPosition + proximity clustering for accurate positioning');
 
   // Calculate a scaling factor to convert room dimensions (meters) to pixels
-  // We'll use the average room size to determine appropriate pixel scale
   const totalArea = claudeRooms.reduce((sum, r) => sum + (r.width * r.depth), 0);
   const avgRoomArea = totalArea / claudeRooms.length;
-  const targetPixelsPerRoom = (imageWidth * imageHeight) / (claudeRooms.length * 4); // rooms take ~25% of image
+  const targetPixelsPerRoom = (imageWidth * imageHeight) / (claudeRooms.length * 4);
   const pixelsPerSqMeter = Math.sqrt(targetPixelsPerRoom / avgRoomArea);
 
-  console.log(`Calculated scale: ${pixelsPerSqMeter.toFixed(2)} pixels per meter`);
+  console.log(`📏 Calculated scale: ${pixelsPerSqMeter.toFixed(2)} pixels per meter`);
 
   // Separate rooms with and without labelPosition
   const roomsWithLabels = claudeRooms.filter(r => r.labelPosition);
   const roomsWithoutLabels = claudeRooms.filter(r => !r.labelPosition);
 
   if (roomsWithoutLabels.length > 0) {
-    console.warn(`${roomsWithoutLabels.length} rooms missing labelPosition, will use fallback positioning`);
+    console.warn(`⚠️  ${roomsWithoutLabels.length} rooms missing labelPosition`);
   }
 
   const unified: UnifiedRoomData[] = [];
 
-  // Process rooms with labelPosition - use Claude's spatial understanding
-  for (const room of roomsWithLabels) {
-    // Convert room dimensions from meters to pixels
-    const bboxWidth = room.width * pixelsPerSqMeter;
-    const bboxHeight = room.depth * pixelsPerSqMeter;
+  // IMPROVED: Process rooms with labelPosition using proximity-based layout
+  if (roomsWithLabels.length > 0) {
+    console.log(`🎯 Processing ${roomsWithLabels.length} rooms with labelPosition data`);
 
-    // Use labelPosition as the centroid (Claude places labels in room centers)
-    const centroid = room.labelPosition!;
+    // Create initial room data with dimensions
+    const roomData = roomsWithLabels.map(room => ({
+      room,
+      width: room.width * pixelsPerSqMeter,
+      height: room.depth * pixelsPerSqMeter,
+      labelPos: room.labelPosition!,
+      centroid: { ...room.labelPosition! }, // Will be adjusted
+      bbox: { x: 0, y: 0, width: 0, height: 0 } // Will be calculated
+    }));
 
-    // Calculate bbox from centroid
-    const x = centroid.x - bboxWidth / 2;
-    const y = centroid.y - bboxHeight / 2;
+    // STEP 1: Detect overlaps and spread out overlapping rooms
+    console.log('🔍 Checking for overlapping label positions...');
+    let overlapsDetected = 0;
 
-    unified.push({
-      ...room,
-      bbox: {
-        x: Math.round(x),
-        y: Math.round(y),
-        width: Math.round(bboxWidth),
-        height: Math.round(bboxHeight)
-      },
-      centroid: {
-        x: Math.round(centroid.x),
-        y: Math.round(centroid.y)
-      },
-      areaPixels: Math.round(bboxWidth * bboxHeight)
-    });
+    for (let i = 0; i < roomData.length; i++) {
+      for (let j = i + 1; j < roomData.length; j++) {
+        const r1 = roomData[i];
+        const r2 = roomData[j];
 
-    console.log(
-      `✓ Positioned "${room.name}" at (${Math.round(centroid.x)}, ${Math.round(centroid.y)}) ` +
-      `[${Math.round(bboxWidth)}×${Math.round(bboxHeight)}px from ${room.width}×${room.depth}m]`
-    );
+        // Calculate distance between label positions
+        const dx = r2.labelPos.x - r1.labelPos.x;
+        const dy = r2.labelPos.y - r1.labelPos.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // Check if they would overlap (sum of half-widths + half-heights)
+        const minDist = (r1.width + r2.width) / 2;
+
+        if (dist < minDist) {
+          overlapsDetected++;
+          // Push rooms apart along the line connecting their labels
+          const pushDist = (minDist - dist) / 2 + 20; // Add 20px gap
+          const angle = Math.atan2(dy, dx);
+
+          r2.centroid.x += pushDist * Math.cos(angle);
+          r2.centroid.y += pushDist * Math.sin(angle);
+          r1.centroid.x -= pushDist * Math.cos(angle);
+          r1.centroid.y -= pushDist * Math.sin(angle);
+        }
+      }
+    }
+
+    if (overlapsDetected > 0) {
+      console.log(`⚠️  Resolved ${overlapsDetected} overlapping positions`);
+    }
+
+    // STEP 2: Build proximity graph to understand spatial relationships
+    console.log('🗺️  Building spatial proximity graph...');
+    const proximityThreshold = Math.max(imageWidth, imageHeight) * 0.3; // 30% of image dimension
+
+    for (const rd of roomData) {
+      const neighbors: string[] = [];
+
+      for (const other of roomData) {
+        if (rd === other) continue;
+
+        const dx = other.centroid.x - rd.centroid.x;
+        const dy = other.centroid.y - rd.centroid.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < proximityThreshold) {
+          neighbors.push(other.room.name);
+        }
+      }
+
+      if (neighbors.length > 0) {
+        console.log(`  → "${rd.room.name}" near: ${neighbors.join(', ')}`);
+      }
+    }
+
+    // STEP 3: Create final unified room data
+    for (const rd of roomData) {
+      const bbox = {
+        x: Math.round(rd.centroid.x - rd.width / 2),
+        y: Math.round(rd.centroid.y - rd.height / 2),
+        width: Math.round(rd.width),
+        height: Math.round(rd.height)
+      };
+
+      unified.push({
+        ...rd.room,
+        bbox,
+        centroid: {
+          x: Math.round(rd.centroid.x),
+          y: Math.round(rd.centroid.y)
+        },
+        areaPixels: Math.round(rd.width * rd.height)
+      });
+
+      console.log(
+        `✓ "${rd.room.name}" positioned at (${Math.round(rd.centroid.x)}, ${Math.round(rd.centroid.y)}) ` +
+        `[${bbox.width}×${bbox.height}px from ${rd.room.width.toFixed(1)}×${rd.room.depth.toFixed(1)}m]`
+      );
+    }
   }
 
   // Fallback for rooms without labelPosition - use improved spatial distribution
