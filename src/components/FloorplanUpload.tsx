@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Upload, FileImage, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { Upload, FileImage, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import heroBackground from "@/assets/hero-background-autumn.png";
@@ -36,7 +36,6 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
   const [buildingMessage, setBuildingMessage] = useState(buildingMessages[0]);
   const [detectedContours, setDetectedContours] = useState<RoomContour[] | null>(null);
   const [overlayCanvas, setOverlayCanvas] = useState<HTMLCanvasElement | null>(null);
-  const [showOverlay, setShowOverlay] = useState(true);
   const [isProcessingCV, setIsProcessingCV] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const additionalInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -109,7 +108,6 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
       
       setDetectedContours(contours);
       setOverlayCanvas(overlayCanvas);
-      setShowOverlay(contours.length > 0);
     } catch (e) {
       console.error(e);
       toast.error("Failed to process image. Please try another file.");
@@ -166,7 +164,7 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
 
   // Draw overlay on preview canvas
   useEffect(() => {
-    if (!previewCanvasRef.current || !preview || !overlayCanvas || !showOverlay) return;
+    if (!previewCanvasRef.current || !preview || !overlayCanvas) return;
     
     const canvas = previewCanvasRef.current;
     const ctx = canvas.getContext('2d')!;
@@ -179,7 +177,7 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
       ctx.drawImage(overlayCanvas, 0, 0);
     };
     img.src = preview;
-  }, [preview, overlayCanvas, showOverlay]);
+  }, [preview, overlayCanvas]);
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -252,20 +250,7 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
               <div className="space-y-6">
                 {/* Main floorplan preview - Desktop: horizontal, Mobile: vertical */}
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg md:text-xl font-medium text-white">Main Floorplan</h3>
-                    {detectedContours && detectedContours.length > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowOverlay(!showOverlay)}
-                        className="text-white hover:bg-white/10"
-                      >
-                        {showOverlay ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-                        {showOverlay ? "Hide" : "Show"} Boundaries
-                      </Button>
-                    )}
-                  </div>
+                  <h3 className="text-lg md:text-xl font-medium text-white">Main Floorplan</h3>
                   
                   {/* Desktop: Horizontal Layout */}
                   <div className="hidden md:flex gap-4 items-start">
@@ -275,7 +260,7 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
                         </div>
                       )}
-                      {showOverlay && overlayCanvas ? (
+                      {overlayCanvas ? (
                         <canvas 
                           ref={previewCanvasRef}
                           className="w-80 h-auto rounded-lg"
@@ -338,7 +323,7 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
                         </div>
                       )}
-                      {showOverlay && overlayCanvas ? (
+                      {overlayCanvas ? (
                         <canvas 
                           ref={previewCanvasRef}
                           className="w-full h-auto rounded-lg"
