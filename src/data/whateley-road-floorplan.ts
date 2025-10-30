@@ -26,9 +26,10 @@ export const whateleyRoadFloorplan: FloorplanData = {
     {
       id: "reception-kitchen",
       name: "Reception/Dining Room/Kitchen",
-      // Position: Far left side of floorplan
-      position: [-4.5, 0, 0],
-      // Dimensions from floorplan: 23'6" × 10'10" = 7.16m × 3.30m
+      // Position: Entire LEFT side of floorplan, this is the dominant room
+      // X: -3.5 (far left), Z: 0.5 (slightly forward to center it)
+      position: [-3.5, 0, 0.5],
+      // Dimensions: 7.16m wide (X) × 3.30m deep (Z)
       dimensions: [7.16, 2.51, 3.30],
       color: "#e8f2f7",
       originalMeasurements: {
@@ -37,24 +38,12 @@ export const whateleyRoadFloorplan: FloorplanData = {
       }
     },
     {
-      id: "principal-bedroom",
-      name: "Principal Bedroom",
-      // Position: Top right area
-      position: [2.5, 0, 2.5],
-      // Dimensions from floorplan: 13'3" × 10' = 4.04m × 3.05m
-      dimensions: [4.04, 2.51, 3.05],
-      color: "#d0e7f1",
-      originalMeasurements: {
-        width: "13'3\" (4.04m)",
-        depth: "10' (3.05m)"
-      }
-    },
-    {
       id: "bedroom-2",
       name: "Bedroom 2",
-      // Position: Bottom left, below entrance hall
-      position: [-3.0, 0, -2.5],
-      // Dimensions from floorplan: 9'10" × 7'3" = 3.00m × 2.21m
+      // Position: Bottom LEFT, BELOW the reception (kitchen area)
+      // X: -3.0 (left side), Z: -2.3 (south/bottom)
+      position: [-3.0, 0, -2.3],
+      // Dimensions: 3.00m wide (X) × 2.21m deep (Z)
       dimensions: [3.00, 2.51, 2.21],
       color: "#c8e3ef",
       originalMeasurements: {
@@ -65,40 +54,57 @@ export const whateleyRoadFloorplan: FloorplanData = {
     {
       id: "entrance-hall",
       name: "Entrance Hall",
-      // Position: Center of floorplan, connecting all rooms
+      // Position: CENTER of floorplan, connecting all rooms
+      // X: 0 (center), Z: 0 (center)
       position: [0, 0, 0],
-      // Approximate dimensions based on floorplan layout
-      dimensions: [2.0, 2.51, 2.5],
+      // Approximate square space in the middle
+      dimensions: [2.2, 2.51, 2.2],
       color: "#d8ebf3",
       originalMeasurements: {
-        width: "~2.0m",
-        depth: "~2.5m"
+        width: "~2.2m",
+        depth: "~2.2m"
+      }
+    },
+    {
+      id: "principal-bedroom",
+      name: "Principal Bedroom",
+      // Position: TOP RIGHT area
+      // X: 3.0 (right side), Z: 2.8 (north/top)
+      position: [3.0, 0, 2.8],
+      // Dimensions: 4.04m wide (X) × 3.05m deep (Z)
+      dimensions: [4.04, 2.51, 3.05],
+      color: "#d0e7f1",
+      originalMeasurements: {
+        width: "13'3\" (4.04m)",
+        depth: "10' (3.05m)"
       }
     },
     {
       id: "bathroom",
       name: "Bathroom",
-      // Position: Right side, adjacent to Principal Bedroom
-      position: [2.5, 0, -0.5],
-      // Approximate dimensions - typical bathroom size
-      dimensions: [2.0, 2.51, 1.8],
+      // Position: RIGHT side, MIDDLE area (between bedroom and store)
+      // X: 3.2 (right side), Z: 0 (middle height)
+      position: [3.2, 0, 0],
+      // Compact bathroom dimensions
+      dimensions: [2.2, 2.51, 2.0],
       color: "#b8dfe8",
       originalMeasurements: {
-        width: "~2.0m",
-        depth: "~1.8m"
+        width: "~2.2m",
+        depth: "~2.0m"
       }
     },
     {
       id: "store",
       name: "Store",
-      // Position: Bottom right corner (restricted height area)
-      position: [1.5, 0, -3.2],
-      // Small storage space
-      dimensions: [1.5, 2.0, 1.2],
+      // Position: BOTTOM RIGHT corner (restricted height area)
+      // X: 2.8 (right side), Z: -2.8 (south/bottom)
+      position: [2.8, 0, -2.8],
+      // Small storage space with lower ceiling
+      dimensions: [1.5, 2.0, 1.3],
       color: "#a8d5e0",
       originalMeasurements: {
         width: "~1.5m",
-        depth: "~1.2m"
+        depth: "~1.3m"
       }
     }
   ]
