@@ -248,7 +248,12 @@ CRITICAL RULES:
         width: r.width,
         depth: r.depth,
         color: r.color,
-        originalMeasurements: r.originalMeasurements
+        originalMeasurements: r.originalMeasurements,
+        // Include pixel data for image-based positioning
+        bbox: r.bbox,
+        centroid: r.centroid,
+        areaPixels: r.areaPixels,
+        labelPosition: r.labelPosition
       })),
       adjacency: adjacency,
       metadata: {

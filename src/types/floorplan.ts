@@ -104,8 +104,8 @@ export interface AIFloorplanResponse {
   totalAreaSqM: number;
   ceilingHeight: number;
   entryRoomId: string;
-  rooms: ParsedRoomData[];
-  /** Optional adjacency data (no longer used in v1) */
+  rooms: UnifiedRoomData[];
+  /** Optional adjacency data (used for layout fallback) */
   adjacency?: AdjacencyRelation[];
 }
 
