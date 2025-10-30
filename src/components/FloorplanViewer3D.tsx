@@ -8,49 +8,93 @@ import { Room as RoomType, FloorplanData } from "@/types/floorplan";
 import { validateLayout } from "@/utils/floorplanLayout";
 import { toast } from "sonner";
 
-const Room3D = ({ room, isSelected, onSelect }: { room: RoomType; isSelected: boolean; onSelect: () => void }) => {
+const Room3D = ({ 
+  room, 
+  isSelected, 
+  onSelect, 
+  onDragEnd,
+  isDragging 
+}: { 
+  room: RoomType; 
+  isSelected: boolean; 
+  onSelect: () => void;
+  onDragEnd: (newPosition: [number, number, number]) => void;
+  isDragging: boolean;
+}) => {
   const [hovered, setHovered] = useState(false);
+  const [dragStart, setDragStart] = useState<THREE.Vector3 | null>(null);
+  const meshRef = useRef<THREE.Mesh>(null);
   const [width, height, depth] = room.dimensions;
+
+  const handlePointerDown = (e: any) => {
+    if (!isSelected) {
+      onSelect();
+      return;
+    }
+    e.stopPropagation();
+    const point = e.point.clone();
+    point.y = 0; // Keep on ground plane
+    setDragStart(point.sub(new THREE.Vector3(...room.position)));
+  };
+
+  const handlePointerMove = (e: any) => {
+    if (!dragStart || !isSelected) return;
+    e.stopPropagation();
+    
+    const point = e.point.clone();
+    point.y = 0;
+    const newPos = point.sub(dragStart);
+    
+    // Snap to grid (0.1m)
+    const snapSize = 0.1;
+    newPos.x = Math.round(newPos.x / snapSize) * snapSize;
+    newPos.z = Math.round(newPos.z / snapSize) * snapSize;
+    
+    onDragEnd([newPos.x, 0, newPos.z]);
+  };
+
+  const handlePointerUp = () => {
+    setDragStart(null);
+  };
 
   return (
     <group position={room.position}>
       {/* Floor */}
       <mesh 
+        ref={meshRef}
         rotation={[-Math.PI / 2, 0, 0]} 
         position={[0, 0, 0]}
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
-        onClick={onSelect}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
       >
         <planeGeometry args={[width, depth]} />
         <meshStandardMaterial 
           color={isSelected ? "#3b82f6" : hovered ? "#14b8a6" : room.color}
           side={THREE.DoubleSide}
           transparent
-          opacity={0.9}
+          opacity={isDragging ? 0.6 : 0.9}
         />
       </mesh>
 
       {/* Walls */}
-      {/* Back wall */}
       <mesh position={[0, height / 2, -depth / 2]}>
         <boxGeometry args={[width, height, 0.1]} />
         <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
       </mesh>
       
-      {/* Front wall */}
       <mesh position={[0, height / 2, depth / 2]}>
         <boxGeometry args={[width, height, 0.1]} />
         <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
       </mesh>
       
-      {/* Left wall */}
       <mesh position={[-width / 2, height / 2, 0]}>
         <boxGeometry args={[0.1, height, depth]} />
         <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
       </mesh>
       
-      {/* Right wall */}
       <mesh position={[width / 2, height / 2, 0]}>
         <boxGeometry args={[0.1, height, depth]} />
         <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
@@ -94,6 +138,7 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
   const [editingRoom, setEditingRoom] = useState<string | null>(null);
   const [localData, setLocalData] = useState(floorplanData);
   const [showValidation, setShowValidation] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const controlsRef = useRef<any>();
 
   const validation = validateLayout(localData);
@@ -116,6 +161,17 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
     };
     setLocalData(updatedData);
     onUpdate(updatedData);
+  };
+
+  const rotateRoom = (roomId: string) => {
+    const room = localData.rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Swap width and depth
+    updateRoom(roomId, {
+      dimensions: [room.dimensions[2], room.dimensions[1], room.dimensions[0]]
+    });
+    toast.success('Room rotated 90°');
   };
 
   return (
@@ -204,6 +260,11 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
             room={room}
             isSelected={selectedRoom === room.id}
             onSelect={() => setSelectedRoom(room.id)}
+            onDragEnd={(newPosition) => {
+              updateRoom(room.id, { position: newPosition });
+              setIsDragging(false);
+            }}
+            isDragging={isDragging && selectedRoom === room.id}
           />
         ))}
 
@@ -253,7 +314,7 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
           <div className="flex items-center gap-6 text-sm text-slate-300">
             <div className="flex items-center gap-2">
               <Move className="h-4 w-4" />
-              <span>Drag to rotate • Scroll to zoom</span>
+              <span>Select room → Drag to move • Scroll to zoom</span>
             </div>
             <Button
               onClick={handleReset}
@@ -279,6 +340,15 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
           </div>
           <div className="flex gap-2 mt-3">
             <Button
+              onClick={() => rotateRoom(selectedRoom!)}
+              size="sm"
+              variant="outline"
+              className="flex-1"
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Rotate
+            </Button>
+            <Button
               onClick={() => {
                 setEditingRoom(selectedRoom);
                 setSelectedRoom(null);
@@ -286,13 +356,12 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
               size="sm"
               className="flex-1"
             >
-              Edit Room
+              Edit
             </Button>
             <Button
               onClick={() => setSelectedRoom(null)}
               variant="secondary"
               size="sm"
-              className="flex-1"
             >
               Close
             </Button>

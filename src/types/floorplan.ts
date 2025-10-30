@@ -100,5 +100,6 @@ export interface AIFloorplanResponse {
   ceilingHeight: number;
   entryRoomId: string;
   rooms: ParsedRoomData[];
-  adjacency: AdjacencyRelation[];
+  /** Optional adjacency data (no longer used in v1) */
+  adjacency?: AdjacencyRelation[];
 }

@@ -2,173 +2,18 @@ import type {
   FloorplanData, 
   Room, 
   ParsedRoomData, 
-  AdjacencyRelation, 
-  EdgeDirection,
   AIFloorplanResponse 
 } from '@/types/floorplan';
 
 const WALL_THICKNESS = 0.1; // meters
 
-interface PlacedRoom {
-  id: string;
-  room: ParsedRoomData;
-  position: [number, number, number];
-}
-
 /**
- * Deterministic layout algorithm using breadth-first traversal
- * Guarantees adjacent rooms have touching walls
+ * Main layout algorithm - uses intelligent clustering
+ * No longer relies on adjacency data from AI
  */
 export function calculateConnectedLayout(aiResponse: AIFloorplanResponse): FloorplanData {
-  const { rooms, adjacency, entryRoomId, ceilingHeight } = aiResponse;
-  
-  // Check if adjacency data is valid
-  if (!adjacency || adjacency.length === 0) {
-    console.warn('No adjacency data provided, using grid fallback layout');
-    return arrangeInGrid(aiResponse);
-  }
-  
-  // Build adjacency map for quick lookup
-  const adjacencyMap = new Map<string, Array<{ roomId: string; edge: EdgeDirection }>>();
-  
-  for (const rel of adjacency) {
-    if (!adjacencyMap.has(rel.room1)) {
-      adjacencyMap.set(rel.room1, []);
-    }
-    adjacencyMap.get(rel.room1)!.push({ roomId: rel.room2, edge: rel.edge });
-    
-    // Add reverse relationship
-    if (!adjacencyMap.has(rel.room2)) {
-      adjacencyMap.set(rel.room2, []);
-    }
-    adjacencyMap.get(rel.room2)!.push({ roomId: rel.room1, edge: getOppositeEdge(rel.edge) });
-  }
-  
-  // Find entry room
-  const entryRoom = rooms.find(r => r.id === entryRoomId);
-  if (!entryRoom) {
-    throw new Error(`Entry room ${entryRoomId} not found`);
-  }
-  
-  // Place rooms using BFS
-  const placedRooms = new Map<string, PlacedRoom>();
-  const queue: string[] = [entryRoomId];
-  
-  // Start with entry room at origin
-  placedRooms.set(entryRoomId, {
-    id: entryRoomId,
-    room: entryRoom,
-    position: [0, 0, 0]
-  });
-  
-  while (queue.length > 0) {
-    const currentId = queue.shift()!;
-    const current = placedRooms.get(currentId)!;
-    const neighbors = adjacencyMap.get(currentId) || [];
-    
-    for (const { roomId, edge } of neighbors) {
-      // Skip if already placed
-      if (placedRooms.has(roomId)) continue;
-      
-      const neighborRoom = rooms.find(r => r.id === roomId);
-      if (!neighborRoom) continue;
-      
-      // Calculate position based on edge direction
-      const newPosition = calculateAdjacentPosition(
-        current.position,
-        current.room,
-        neighborRoom,
-        edge
-      );
-      
-      placedRooms.set(roomId, {
-        id: roomId,
-        room: neighborRoom,
-        position: newPosition
-      });
-      
-      queue.push(roomId);
-    }
-  }
-  
-  // Check if all rooms were placed
-  if (placedRooms.size < rooms.length) {
-    const unplacedRooms = rooms.filter(r => !placedRooms.has(r.id));
-    console.warn('Some rooms could not be placed via adjacency:', unplacedRooms.map(r => r.name));
-    console.warn('Falling back to grid layout');
-    return arrangeInGrid(aiResponse);
-  }
-  
-  // Convert to FloorplanData
-  const finalRooms: Room[] = Array.from(placedRooms.values()).map(placed => ({
-    id: placed.room.id,
-    name: placed.room.name,
-    position: placed.position,
-    dimensions: [placed.room.width, ceilingHeight, placed.room.depth],
-    color: placed.room.color,
-    originalMeasurements: placed.room.originalMeasurements
-  }));
-  
-  return {
-    id: aiResponse.id,
-    address: aiResponse.address,
-    totalAreaSqFt: aiResponse.totalAreaSqFt,
-    totalAreaSqM: aiResponse.totalAreaSqM,
-    ceilingHeight: aiResponse.ceilingHeight,
-    rooms: finalRooms
-  };
-}
-
-/**
- * Calculate position of a room adjacent to another room
- */
-function calculateAdjacentPosition(
-  basePosition: [number, number, number],
-  baseRoom: ParsedRoomData,
-  newRoom: ParsedRoomData,
-  edge: EdgeDirection
-): [number, number, number] {
-  const [baseX, baseY, baseZ] = basePosition;
-  
-  switch (edge) {
-    case 'east': // To the RIGHT (+X)
-      return [
-        baseX + (baseRoom.width / 2) + WALL_THICKNESS + (newRoom.width / 2),
-        0,
-        baseZ
-      ];
-      
-    case 'west': // To the LEFT (-X)
-      return [
-        baseX - (baseRoom.width / 2) - WALL_THICKNESS - (newRoom.width / 2),
-        0,
-        baseZ
-      ];
-      
-    case 'north': // BEHIND (+Z)
-      return [
-        baseX,
-        0,
-        baseZ + (baseRoom.depth / 2) + WALL_THICKNESS + (newRoom.depth / 2)
-      ];
-      
-    case 'south': // IN FRONT (-Z)
-      return [
-        baseX,
-        0,
-        baseZ - (baseRoom.depth / 2) - WALL_THICKNESS - (newRoom.depth / 2)
-      ];
-  }
-}
-
-function getOppositeEdge(edge: EdgeDirection): EdgeDirection {
-  const opposites: Record<EdgeDirection, EdgeDirection> = {
-    north: 'south',
-    south: 'north',
-    east: 'west',
-    west: 'east'
-  };
-  return opposites[edge];
+  console.log('Using intelligent clustering layout (no adjacency required)');
+  return arrangeInGrid(aiResponse);
 }
 
 /**
@@ -244,40 +89,94 @@ function calculateMinDistance(r1: Room, r2: Room): number {
 }
 
 /**
- * Fallback grid layout when adjacency data is missing or incomplete
- * Places rooms in a simple grid pattern based on their size
+ * Intelligent layout algorithm for UK flats
+ * Places rooms based on type clustering and size hints
  */
 function arrangeInGrid(aiResponse: AIFloorplanResponse): FloorplanData {
-  const { rooms, ceilingHeight } = aiResponse;
+  const { rooms, ceilingHeight, entryRoomId } = aiResponse;
   
-  // Sort rooms by area (largest first)
-  const sortedRooms = [...rooms].sort((a, b) => {
-    const areaA = a.width * a.depth;
-    const areaB = b.width * b.depth;
-    return areaB - areaA;
-  });
+  // Categorize rooms by type
+  const entryRoom = rooms.find(r => r.id === entryRoomId);
+  const receptionRooms = rooms.filter(r => 
+    r.name.toLowerCase().includes('reception') || 
+    r.name.toLowerCase().includes('living') ||
+    r.name.toLowerCase().includes('lounge')
+  );
+  const bedrooms = rooms.filter(r => r.name.toLowerCase().includes('bedroom'));
+  const bathrooms = rooms.filter(r => 
+    r.name.toLowerCase().includes('bathroom') || 
+    r.name.toLowerCase().includes('wc')
+  );
+  const kitchen = rooms.find(r => r.name.toLowerCase().includes('kitchen'));
+  const hallways = rooms.filter(r => 
+    r.name.toLowerCase().includes('hall') && 
+    r.id !== entryRoomId
+  );
   
-  // Calculate grid dimensions (try to make it roughly square)
-  const gridSize = Math.ceil(Math.sqrt(sortedRooms.length));
+  // Remaining rooms
+  const categorized = new Set([
+    entryRoomId,
+    ...receptionRooms.map(r => r.id),
+    ...bedrooms.map(r => r.id),
+    ...bathrooms.map(r => r.id),
+    ...(kitchen ? [kitchen.id] : []),
+    ...hallways.map(r => r.id)
+  ]);
+  const otherRooms = rooms.filter(r => !categorized.has(r.id));
   
-  const finalRooms: Room[] = sortedRooms.map((room, index) => {
-    const row = Math.floor(index / gridSize);
-    const col = index % gridSize;
-    
-    // Calculate position with spacing
-    const spacing = 0.5; // meters between rooms
-    const x = col * (room.width + spacing);
-    const z = row * (room.depth + spacing);
-    
-    return {
+  const finalRooms: Room[] = [];
+  let currentX = 0;
+  let currentZ = 0;
+  let maxRowHeight = 0;
+  
+  // Helper to place a room
+  const placeRoom = (room: ParsedRoomData) => {
+    finalRooms.push({
       id: room.id,
       name: room.name,
-      position: [x, 0, z] as [number, number, number],
-      dimensions: [room.width, ceilingHeight, room.depth] as [number, number, number],
+      position: [currentX + room.width / 2, 0, currentZ + room.depth / 2],
+      dimensions: [room.width, ceilingHeight, room.depth],
       color: room.color,
       originalMeasurements: room.originalMeasurements
-    };
-  });
+    });
+    
+    currentX += room.width + WALL_THICKNESS;
+    maxRowHeight = Math.max(maxRowHeight, room.depth);
+  };
+  
+  const nextRow = () => {
+    currentX = 0;
+    currentZ += maxRowHeight + WALL_THICKNESS;
+    maxRowHeight = 0;
+  };
+  
+  // Layout strategy: Entry → Reception → Kitchen | Bedrooms → Bathrooms
+  
+  // Row 1: Entry + Reception rooms (front of flat)
+  if (entryRoom) placeRoom(entryRoom);
+  receptionRooms.forEach(placeRoom);
+  if (receptionRooms.length === 0 && kitchen) placeRoom(kitchen);
+  
+  // Row 2: Kitchen (if not placed) + Bedrooms
+  nextRow();
+  if (receptionRooms.length > 0 && kitchen) placeRoom(kitchen);
+  bedrooms.slice(0, 2).forEach(placeRoom);
+  
+  // Row 3: More bedrooms + Bathrooms
+  if (bedrooms.length > 2) {
+    nextRow();
+    bedrooms.slice(2).forEach(placeRoom);
+    bathrooms.forEach(placeRoom);
+  } else if (bathrooms.length > 0) {
+    bathrooms.forEach(placeRoom);
+  }
+  
+  // Row 4: Hallways and other rooms
+  if (hallways.length > 0 || otherRooms.length > 0) {
+    nextRow();
+    hallways.forEach(placeRoom);
+    otherRooms.forEach(placeRoom);
+  }
   
   return {
     id: aiResponse.id,

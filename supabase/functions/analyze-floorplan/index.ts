@@ -27,22 +27,24 @@ serve(async (req) => {
 
     const systemPrompt = `You are an expert at analyzing 2D architectural floorplans.
 
-Your task: Extract room dimensions and identify which rooms share walls.
+Your task: Extract room names, dimensions, total area, and identify the entry room.
 
-STEP 1: Identify all rooms with their dimensions
-- Measure width and depth in meters from the floorplan
-- Convert from feet/inches if needed
-- Include original measurements as shown on plan
+INSTRUCTIONS:
+1. Identify all rooms with their dimensions
+   - Measure width and depth in meters from the floorplan
+   - Convert from feet/inches if needed (1 foot = 0.3048m)
+   - Include original measurements as shown on plan
 
-STEP 2: Determine which rooms PHYSICALLY TOUCH each other
-- Only list rooms that share a wall
-- Use cardinal directions from room1's perspective TO room2:
-  * "north" = room2 is at the TOP/BACK of room1
-  * "south" = room2 is at the BOTTOM/FRONT of room1  
-  * "east" = room2 is to the RIGHT of room1
-  * "west" = room2 is to the LEFT of room1
+2. Calculate total floor area (in both sqFt and sqM)
 
-STEP 3: Identify the entry room (usually has front door/main entrance)
+3. Identify the entry room (usually has front door/main entrance)
+
+4. Assign colors based on room type:
+   - Living/Reception rooms: warm tones (#fef3c7, #fde68a)
+   - Bedrooms: cool blues (#e0f2fe, #bae6fd)
+   - Bathrooms: aqua (#cffafe, #a5f3fc)
+   - Kitchen: green (#d1fae5, #a7f3d0)
+   - Halls/Corridors: neutral (#f3f4f6, #e5e7eb)
 
 Return ONLY valid JSON in this exact format:
 {
@@ -58,25 +60,31 @@ Return ONLY valid JSON in this exact format:
       "name": "Entrance Hall",
       "width": 2.5,
       "depth": 1.8,
-      "color": "#e0f2fe",
+      "color": "#e5e7eb",
       "originalMeasurements": {
         "width": "2.50m",
         "depth": "1.80m"
       }
+    },
+    {
+      "id": "reception",
+      "name": "Reception",
+      "width": 5.2,
+      "depth": 3.8,
+      "color": "#fef3c7",
+      "originalMeasurements": {
+        "width": "5.20m",
+        "depth": "3.80m"
+      }
     }
-  ],
-  "adjacency": [
-    {"room1": "entrance-hall", "room2": "reception", "edge": "west"},
-    {"room1": "reception", "room2": "kitchen", "edge": "north"}
   ]
 }
 
 CRITICAL RULES:
-- adjacency array MUST list ALL rooms that share walls
-- Each adjacency entry connects exactly 2 rooms
-- If room A touches room B, you MUST include that pair
-- Use lowercase IDs with hyphens (e.g., "entrance-hall")
-- edge values: "north", "south", "east", "west" only`;
+- Use lowercase IDs with hyphens (e.g., "entrance-hall", "bedroom-1")
+- Ensure all measurements are in meters
+- totalAreaSqM and totalAreaSqFt must match room dimensions
+- entryRoomId must match one of the room IDs`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -150,12 +158,10 @@ CRITICAL RULES:
     
     const floorplanData = JSON.parse(jsonText);
     
-    // Log adjacency data for debugging
-    console.log('Adjacency from Claude:', JSON.stringify(floorplanData.adjacency, null, 2));
     console.log('Floorplan analysis complete:', {
       rooms: floorplanData.rooms?.length,
-      adjacencyCount: floorplanData.adjacency?.length || 0,
-      totalArea: floorplanData.totalAreaSqM
+      totalArea: floorplanData.totalAreaSqM,
+      entryRoom: floorplanData.entryRoomId
     });
 
     return new Response(
