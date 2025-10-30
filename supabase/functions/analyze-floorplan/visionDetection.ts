@@ -1,9 +1,13 @@
 /**
  * Computer Vision Module for Floorplan Room Boundary Detection
  *
- * Deno-compatible implementation using Web APIs and pure TypeScript
- * No Node.js-specific dependencies required
+ * Deno-native implementation using pure JavaScript/WASM libraries
+ * Compatible with Deno Deploy (Supabase Edge Functions)
  */
+
+// Import Deno-compatible image decoders
+import { decode as decodePng } from 'https://deno.land/x/pngs@0.1.1/mod.ts';
+import { decode as decodeJpeg } from 'https://deno.land/x/jpeg@v1.0.1/mod.ts';
 
 export interface RoomContour {
   bbox: {
@@ -21,49 +25,64 @@ export interface RoomContour {
 }
 
 /**
- * Decode base64 image data to raw pixel data
+ * Decode base64 image data to raw pixel data using Deno-native libraries
  */
 async function decodeImage(base64Data: string): Promise<{
-  data: Uint8ClampedArray;
+  data: Uint8Array;
   width: number;
   height: number;
 }> {
-  // Remove data URL prefix if present
-  const base64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  try {
+    // Remove data URL prefix if present
+    const base64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
 
-  // Decode base64 to binary
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+    // Detect image format from data URL prefix
+    const isPng = base64Data.includes('image/png');
+    const isJpeg = base64Data.includes('image/jpeg') || base64Data.includes('image/jpg');
+
+    if (!isPng && !isJpeg) {
+      throw new Error('Unsupported image format (must be PNG or JPEG)');
+    }
+
+    // Decode base64 to binary
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    console.log(`Decoding ${isPng ? 'PNG' : 'JPEG'} image (${bytes.length} bytes)...`);
+
+    // Decode image based on format
+    let imageData: { image: Uint8Array; width: number; height: number };
+
+    if (isPng) {
+      imageData = decodePng(bytes);
+    } else {
+      // JPEG decoder returns { data, width, height }
+      const jpegData = decodeJpeg(bytes);
+      imageData = {
+        image: jpegData.data,
+        width: jpegData.width,
+        height: jpegData.height
+      };
+    }
+
+    return {
+      data: imageData.image,
+      width: imageData.width,
+      height: imageData.height
+    };
+  } catch (error) {
+    console.error('Image decode error:', error);
+    throw new Error(`Failed to decode image: ${error instanceof Error ? error.message : String(error)}`);
   }
-
-  // Use Web APIs to decode the image
-  const blob = new Blob([bytes], { type: 'image/png' });
-  const imageBitmap = await createImageBitmap(blob);
-
-  const width = imageBitmap.width;
-  const height = imageBitmap.height;
-
-  // Create canvas context to extract pixel data
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Failed to get canvas context');
-
-  ctx.drawImage(imageBitmap, 0, 0);
-  const imageData = ctx.getImageData(0, 0, width, height);
-
-  return {
-    data: imageData.data,
-    width,
-    height
-  };
 }
 
 /**
  * Convert RGBA image to grayscale
  */
-function toGrayscale(rgba: Uint8ClampedArray): Uint8Array {
+function toGrayscale(rgba: Uint8Array): Uint8Array {
   const gray = new Uint8Array(rgba.length / 4);
   for (let i = 0; i < gray.length; i++) {
     const r = rgba[i * 4];
@@ -78,10 +97,10 @@ function toGrayscale(rgba: Uint8ClampedArray): Uint8Array {
 /**
  * Apply binary threshold to grayscale image
  */
-function threshold(gray: Uint8Array, threshold: number = 200): Uint8Array {
+function threshold(gray: Uint8Array, thresholdValue: number = 200): Uint8Array {
   const binary = new Uint8Array(gray.length);
   for (let i = 0; i < gray.length; i++) {
-    binary[i] = gray[i] > threshold ? 255 : 0;
+    binary[i] = gray[i] > thresholdValue ? 255 : 0;
   }
   return binary;
 }
@@ -213,23 +232,16 @@ function calculateBoundingBox(points: Array<{x: number; y: number}>): {
 
 /**
  * Main function to detect room boundaries in a floorplan image
- * Deno-compatible implementation using Web APIs
+ * Deno-native implementation using pure JavaScript/WASM libraries
  */
 export async function detectRoomBoundaries(imageData: string): Promise<RoomContour[]> {
-  // Check if required Web APIs are available
-  if (typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') {
-    console.log('⚠️  Web APIs (OffscreenCanvas/createImageBitmap) not available in this environment');
-    console.log('  → Computer vision disabled, using Claude AI-only mode');
-    return [];
-  }
-
   try {
-    console.log('🔍 Starting computer vision room boundary detection...');
+    console.log('🔍 Starting computer vision room boundary detection (Deno-native)...');
 
-    // Step 1: Decode image
+    // Step 1: Decode image using Deno-compatible libraries
     console.log('  → Decoding image data...');
     const {data: rgba, width, height} = await decodeImage(imageData);
-    console.log(`  → Image size: ${width}x${height}px`);
+    console.log(`  → Image size: ${width}x${height}px (${rgba.length} bytes)`);
 
     // Step 2: Convert to grayscale
     console.log('  → Converting to grayscale...');
@@ -239,7 +251,7 @@ export async function detectRoomBoundaries(imageData: string): Promise<RoomConto
     console.log('  → Applying binary threshold...');
     const binary = threshold(gray, 200);
 
-    // Step 4: Detect edges (optional - can help with room boundaries)
+    // Step 4: Detect edges (helps identify room boundaries)
     console.log('  → Detecting edges...');
     const edges = detectEdges(gray, width, height);
 
@@ -274,11 +286,18 @@ export async function detectRoomBoundaries(imageData: string): Promise<RoomConto
     }
 
     console.log(`✅ Computer vision detected ${contours.length} valid room boundaries`);
+
+    if (contours.length === 0) {
+      console.warn('⚠️  No room boundaries detected - image may be too dark/light or lack clear room divisions');
+      console.log('  → Falling back to Claude AI-only mode with synthetic contours');
+    }
+
     return contours;
 
   } catch (error) {
     console.error('❌ Computer vision detection failed:', error);
-    console.log('  → Falling back to Claude AI-only mode');
+    console.log('  → Error details:', error instanceof Error ? error.message : String(error));
+    console.log('  → Falling back to Claude AI-only mode with synthetic contours');
     return []; // Fallback to synthetic contours
   }
 }
