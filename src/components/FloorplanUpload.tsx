@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { Upload, FileImage } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import heroBackground from "@/assets/hero-background.png";
 
 interface FloorplanUploadProps {
   onFloorplanUploaded: (imageData: string) => void;
@@ -48,105 +49,97 @@ export const FloorplanUpload = ({ onFloorplanUploaded }: FloorplanUploadProps) =
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-background to-slate-100 p-6">
-      <div className="max-w-4xl w-full">
-        <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
-            FloorPlan3D
-          </h1>
-          <p className="text-lg text-muted-foreground">
-            Upload your floorplan and watch it transform into an interactive 3D walkthrough
-          </p>
-        </div>
+    <div className="relative min-h-screen overflow-hidden">
+      {/* Hero Background Image */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: `url(${heroBackground})` }}
+      >
+        <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/50 to-black/70" />
+      </div>
 
-        <div
-          onDrop={handleDrop}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          className={`
-            relative border-2 border-dashed rounded-2xl p-12 transition-all duration-300
-            ${isDragging 
-              ? "border-accent bg-accent/5 scale-[1.02]" 
-              : "border-border bg-card hover:border-accent/50 hover:bg-accent/5"
-            }
-          `}
-        >
-          {preview ? (
-            <div className="space-y-6">
-              <img 
-                src={preview} 
-                alt="Floorplan preview" 
-                className="w-full h-auto rounded-lg shadow-lg"
-              />
-              <div className="flex gap-4 justify-center">
+      {/* Content */}
+      <div className="relative z-10 min-h-screen flex flex-col justify-center px-6 md:px-12 lg:px-24 py-16">
+        <div className="max-w-3xl">
+          {/* Hero Text */}
+          <div className="mb-12 space-y-6">
+            <h1 className="text-5xl md:text-7xl font-serif font-normal text-white leading-tight">
+              Transform floorplans
+              <br />
+              into reality.
+            </h1>
+            <p className="text-lg md:text-xl text-white/90 max-w-xl">
+              Upload your 2D floorplan and experience it as an immersive 3D walkthrough in seconds.
+            </p>
+          </div>
+
+          {/* Upload Area */}
+          <div
+            onDrop={handleDrop}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            className="space-y-4"
+          >
+            {preview ? (
+              <div className="space-y-4">
+                <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6">
+                  <img 
+                    src={preview} 
+                    alt="Floorplan preview" 
+                    className="w-full h-auto rounded-lg"
+                  />
+                </div>
                 <Button 
                   variant="outline" 
                   onClick={triggerFileSelect}
-                  className="cursor-pointer"
+                  className="bg-white/10 backdrop-blur-sm border-white/30 text-white hover:bg-white/20"
                 >
                   <FileImage className="mr-2 h-4 w-4" />
                   Choose Different File
                 </Button>
               </div>
-            </div>
-          ) : (
-            <div className="text-center space-y-6">
-              <div className="flex justify-center">
-                <div className="p-6 rounded-full bg-accent/10">
-                  <Upload className="w-16 h-16 text-accent" />
+            ) : (
+              <div className="flex gap-3 max-w-2xl">
+                <div
+                  onClick={triggerFileSelect}
+                  className={`
+                    flex-1 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl px-6 py-4
+                    text-white/70 placeholder:text-white/50 cursor-pointer
+                    transition-all duration-300 hover:bg-white/15 hover:border-white/30
+                    ${isDragging ? "bg-white/20 border-white/40 scale-[1.01]" : ""}
+                  `}
+                >
+                  <div className="flex items-center gap-3">
+                    <FileImage className="h-5 w-5 text-white/70" />
+                    <span className="text-sm">
+                      {isDragging ? "Drop your floorplan here" : "Select floorplan or drag & drop"}
+                    </span>
+                  </div>
                 </div>
+                <Button
+                  onClick={triggerFileSelect}
+                  className="bg-white text-black hover:bg-white/90 px-8 font-medium"
+                  size="lg"
+                >
+                  Upload
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileInput}
+                  className="hidden"
+                />
               </div>
-              
-              <div className="space-y-2">
-                <h3 className="text-2xl font-semibold">Upload Your Floorplan</h3>
-                <p className="text-muted-foreground">
-                  Drag and drop your floorplan image here, or click to browse
-                </p>
-              </div>
-
-              <Button 
-                size="lg" 
-                onClick={triggerFileSelect}
-                className="cursor-pointer"
-              >
-                <FileImage className="mr-2 h-5 w-5" />
-                Select File
-              </Button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileInput}
-                className="hidden"
-              />
-
-              <p className="text-sm text-muted-foreground">
-                Supports PNG, JPG, JPEG formats
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-8 p-6 bg-card rounded-xl border">
-          <h4 className="font-semibold mb-3 text-slate-700">How it works:</h4>
-          <ol className="space-y-2 text-sm text-muted-foreground">
-            <li className="flex items-start gap-2">
-              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent flex items-center justify-center text-xs font-semibold">1</span>
-              <span>Upload your 2D floorplan image</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent flex items-center justify-center text-xs font-semibold">2</span>
-              <span>AI analyzes the layout and dimensions</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="flex-shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent flex items-center justify-center text-xs font-semibold">3</span>
-              <span>Explore your space in immersive 3D with WASD controls</span>
-            </li>
-          </ol>
+            )}
+            
+            <p className="text-sm text-white/60">
+              Supports PNG, JPG, JPEG formats • AI-powered 3D generation
+            </p>
+          </div>
         </div>
       </div>
     </div>
