@@ -311,7 +311,13 @@ DUPLICATE PREVENTION (CRITICAL):
 
     let adjacency;
     try {
-      adjacency = await determineAdjacencyWithAgent(unifiedRooms, CLAUDE_API_KEY);
+      // Hard timeout to prevent function timeouts when the agent loops too long
+      const AGENT_TIMEOUT_MS = 12000;
+      const agentPromise = determineAdjacencyWithAgent(unifiedRooms, CLAUDE_API_KEY);
+      adjacency = await Promise.race([
+        agentPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('agent_timeout')), AGENT_TIMEOUT_MS))
+      ]);
       console.log(`✓ Agent determined ${adjacency.length} adjacency relationships`);
 
       // Fallback to geometric if agent returns nothing
@@ -320,7 +326,7 @@ DUPLICATE PREVENTION (CRITICAL):
         adjacency = detectAdjacencyGeometric(unifiedRooms);
       }
     } catch (error) {
-      console.error('Agentic verification failed, using geometric fallback:', error);
+      console.error('Agentic verification failed or timed out, using geometric fallback:', error);
       adjacency = detectAdjacencyGeometric(unifiedRooms);
     }
 

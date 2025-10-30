@@ -108,7 +108,7 @@ When you have determined all adjacencies, return your final answer as a JSON arr
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-5',
-          max_tokens: 4096,
+          max_tokens: 1024,
           tools: toolDefinitions,
           messages: messages
         }),

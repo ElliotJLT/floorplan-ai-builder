@@ -14,24 +14,57 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
   const [isDragging, setIsDragging] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Compress oversized images before sending to the backend to avoid timeouts/413s
+  const compressImage = useCallback(async (file: File): Promise<string> => {
+    const MAX_DIM = 1600; // px
+    const QUALITY = 0.85; // JPEG quality
 
-  const handleFile = useCallback((file: File) => {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
+    });
+
+    // Load image
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("Failed to load image"));
+      i.src = dataUrl;
+    });
+
+    const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
+    if (scale === 1) return dataUrl; // Small enough, return original
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', QUALITY);
+  }, []);
+
+  const handleFile = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
       toast.error("Please upload an image file");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      setPreview(result);
+    try {
+      const compressed = await compressImage(file);
+      setPreview(compressed);
       toast.success("Floorplan uploaded! Generating 3D model...");
       setTimeout(() => {
-        onFloorplanUploaded(result);
-      }, 1500);
-    };
-    reader.readAsDataURL(file);
-  }, [onFloorplanUploaded]);
+        onFloorplanUploaded(compressed);
+      }, 800);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to process image. Please try another file.");
+    }
+  }, [compressImage, onFloorplanUploaded]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
