@@ -279,7 +279,13 @@ export function detectAdjacencyGeometric(rooms: UnifiedRoomData[]): AdjacencyRel
           const axis = (edge === 'north' || edge === 'south') ? 'x' : 'y';
           const overlap = spatialTools.get_overlap_percentage(rooms, room1.id, room2.id, axis);
 
-          if (overlap >= OVERLAP_THRESHOLD) {
+          // IMPROVED LOGIC: Use adaptive overlap requirements based on distance
+          // If rooms are VERY close (< 20px), they're likely adjacent even with NO overlap
+          // This handles synthetic contours that position rooms near each other but don't perfectly align
+          const isVeryClose = Math.abs(distance) < 20;
+          const requiredOverlap = isVeryClose ? 0 : OVERLAP_THRESHOLD; // Accept 0% for very close, 50% otherwise
+
+          if (overlap >= requiredOverlap) {
             adjacencies.push({
               room1: room1.id,
               room2: room2.id,
@@ -289,16 +295,17 @@ export function detectAdjacencyGeometric(rooms: UnifiedRoomData[]): AdjacencyRel
 
             console.log(
               `✓ Adjacent: "${room1.name}" ↔ "${room2.name}" (${edge}, ` +
-              `${Math.round(distance)}px gap, ${Math.round(overlap)}% overlap)`
+              `${Math.round(distance)}px gap, ${Math.round(overlap)}% overlap)` +
+              (isVeryClose ? ' [very close - relaxed overlap]' : '')
             );
 
             foundAdjacency = true;
             break; // Only report one adjacency per room pair
-          } else if (Math.abs(distance) <= DISTANCE_THRESHOLD) {
+          } else {
             // Close but poor alignment - log for debugging
             console.log(
               `✗ Near but not adjacent: "${room1.name}" ↔ "${room2.name}" (${edge}, ` +
-              `${Math.round(distance)}px gap, ${Math.round(overlap)}% overlap - too low)`
+              `${Math.round(distance)}px gap, ${Math.round(overlap)}% overlap - needs ${requiredOverlap}%)`
             );
           }
         }

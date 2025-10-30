@@ -409,8 +409,9 @@ VALIDATION BEFORE SUBMITTING:
     let adjacency: any[] = [];
     try {
       // Hard timeout to prevent function timeouts when the agent loops too long
-      // INCREASED: 12s → 25s to give agent more time for complex floorplans
-      const AGENT_TIMEOUT_MS = 25000;
+      // INCREASED: 12s → 25s → 40s to give agent more time for complex floorplans
+      // Logs show agent reaching iteration 8-9 before timeout, needs more time
+      const AGENT_TIMEOUT_MS = 40000;
       console.log(`Starting agentic adjacency analysis (timeout: ${AGENT_TIMEOUT_MS}ms)...`);
 
       const agentPromise = determineAdjacencyWithAgent(unifiedRooms, CLAUDE_API_KEY);
