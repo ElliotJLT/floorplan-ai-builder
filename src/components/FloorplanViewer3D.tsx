@@ -1,59 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera, Text } from "@react-three/drei";
 import * as THREE from "three";
 import { Button } from "@/components/ui/button";
 import { Home, Move, RotateCcw } from "lucide-react";
+import { whateleyRoadFloorplan } from "@/data/whateley-road-floorplan";
+import { Room as RoomType } from "@/types/floorplan";
 
-interface Room {
-  name: string;
-  position: [number, number, number];
-  size: [number, number, number];
-  color: string;
-}
-
-// Hardcoded floorplan data based on the Whateley Road flat
-const FLOORPLAN_DATA: Room[] = [
-  {
-    name: "Reception/Kitchen",
-    position: [0, 0, -2],
-    size: [7.16, 2.51, 3.30],
-    color: "#f0f4f8"
-  },
-  {
-    name: "Principal Bedroom",
-    position: [4, 0, 2],
-    size: [4.04, 2.51, 3.05],
-    color: "#e8f2f7"
-  },
-  {
-    name: "Bedroom 2",
-    position: [-3.5, 0, 1],
-    size: [3.00, 2.51, 2.21],
-    color: "#e0eef5"
-  },
-  {
-    name: "Entrance Hall",
-    position: [1, 0, 0.5],
-    size: [2, 2.51, 2],
-    color: "#d8ebf3"
-  },
-  {
-    name: "Bathroom",
-    position: [4, 0, -0.5],
-    size: [1.5, 2.51, 1.5],
-    color: "#d0e7f1"
-  },
-  {
-    name: "Store",
-    position: [3, 0, -2.5],
-    size: [1.2, 2.51, 1.2],
-    color: "#c8e3ef"
-  }
-];
-
-const Room3D = ({ room }: { room: Room }) => {
+const Room3D = ({ room }: { room: RoomType }) => {
   const [hovered, setHovered] = useState(false);
+  const [width, height, depth] = room.dimensions;
 
   return (
     <group position={room.position}>
@@ -64,7 +20,7 @@ const Room3D = ({ room }: { room: Room }) => {
         onPointerOver={() => setHovered(true)}
         onPointerOut={() => setHovered(false)}
       >
-        <planeGeometry args={[room.size[0], room.size[2]]} />
+        <planeGeometry args={[width, depth]} />
         <meshStandardMaterial 
           color={hovered ? "#14b8a6" : room.color}
           side={THREE.DoubleSide}
@@ -75,49 +31,50 @@ const Room3D = ({ room }: { room: Room }) => {
 
       {/* Walls */}
       {/* Back wall */}
-      <mesh position={[0, room.size[1] / 2, -room.size[2] / 2]}>
-        <boxGeometry args={[room.size[0], room.size[1], 0.1]} />
+      <mesh position={[0, height / 2, -depth / 2]}>
+        <boxGeometry args={[width, height, 0.1]} />
         <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
       </mesh>
       
       {/* Front wall */}
-      <mesh position={[0, room.size[1] / 2, room.size[2] / 2]}>
-        <boxGeometry args={[room.size[0], room.size[1], 0.1]} />
+      <mesh position={[0, height / 2, depth / 2]}>
+        <boxGeometry args={[width, height, 0.1]} />
         <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
       </mesh>
       
       {/* Left wall */}
-      <mesh position={[-room.size[0] / 2, room.size[1] / 2, 0]}>
-        <boxGeometry args={[0.1, room.size[1], room.size[2]]} />
+      <mesh position={[-width / 2, height / 2, 0]}>
+        <boxGeometry args={[0.1, height, depth]} />
         <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
       </mesh>
       
       {/* Right wall */}
-      <mesh position={[room.size[0] / 2, room.size[1] / 2, 0]}>
-        <boxGeometry args={[0.1, room.size[1], room.size[2]]} />
+      <mesh position={[width / 2, height / 2, 0]}>
+        <boxGeometry args={[0.1, height, depth]} />
         <meshStandardMaterial color="#e2e8f0" opacity={0.8} transparent />
       </mesh>
 
       {/* Room label */}
       <Text
-        position={[0, 2, 0]}
-        fontSize={0.3}
+        position={[0, height + 0.3, 0]}
+        fontSize={0.25}
         color="#334155"
         anchorX="center"
         anchorY="middle"
+        maxWidth={width - 0.2}
       >
         {room.name}
       </Text>
 
       {/* Dimensions label */}
       <Text
-        position={[0, 1.5, 0]}
-        fontSize={0.15}
+        position={[0, height - 0.2, 0]}
+        fontSize={0.12}
         color="#64748b"
         anchorX="center"
         anchorY="middle"
       >
-        {room.size[0].toFixed(2)}m × {room.size[2].toFixed(2)}m
+        {width.toFixed(2)}m × {depth.toFixed(2)}m
       </Text>
     </group>
   );
@@ -144,8 +101,10 @@ export const FloorplanViewer3D = ({ floorplanImage, onBack }: FloorplanViewer3DP
       <div className="absolute top-0 left-0 right-0 z-10 p-4 bg-gradient-to-b from-slate-900/90 to-transparent">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-white">Whateley Road, SE22</h2>
-            <p className="text-sm text-slate-300">2 Bed Ground Floor Flat • 556 sq ft</p>
+            <h2 className="text-2xl font-bold text-white">{whateleyRoadFloorplan.address}</h2>
+            <p className="text-sm text-slate-300">
+              {whateleyRoadFloorplan.rooms.filter(r => r.name.includes('Bedroom')).length} Bed Ground Floor Flat • {whateleyRoadFloorplan.totalAreaSqFt} sq ft
+            </p>
           </div>
           <Button onClick={onBack} variant="secondary">
             <Home className="mr-2 h-4 w-4" />
@@ -156,13 +115,13 @@ export const FloorplanViewer3D = ({ floorplanImage, onBack }: FloorplanViewer3DP
 
       {/* 3D Canvas */}
       <Canvas shadows>
-        <PerspectiveCamera makeDefault position={[10, 8, 10]} />
+        <PerspectiveCamera makeDefault position={[12, 10, 12]} />
         <OrbitControls 
           ref={controlsRef}
           enableDamping
           dampingFactor={0.05}
           minDistance={5}
-          maxDistance={30}
+          maxDistance={35}
           maxPolarAngle={Math.PI / 2 - 0.1}
         />
 
@@ -178,8 +137,8 @@ export const FloorplanViewer3D = ({ floorplanImage, onBack }: FloorplanViewer3DP
         <directionalLight position={[-10, 10, -5]} intensity={0.5} />
 
         {/* Rooms */}
-        {FLOORPLAN_DATA.map((room, index) => (
-          <Room3D key={index} room={room} />
+        {whateleyRoadFloorplan.rooms.map((room) => (
+          <Room3D key={room.id} room={room} />
         ))}
 
         {/* Ground plane */}
@@ -214,10 +173,16 @@ export const FloorplanViewer3D = ({ floorplanImage, onBack }: FloorplanViewer3DP
       <div className="absolute top-24 left-6 z-10 bg-slate-800/90 backdrop-blur-sm p-4 rounded-xl border border-slate-700 max-w-xs">
         <h3 className="text-white font-semibold mb-2">Room Details</h3>
         <div className="space-y-1 text-sm text-slate-300">
-          <p>• Reception/Kitchen: 23'6" × 10'10"</p>
-          <p>• Principal Bedroom: 13'3" × 10'</p>
-          <p>• Bedroom 2: 9'10" × 7'3"</p>
-          <p>• Ceiling Height: 2.51m</p>
+          {whateleyRoadFloorplan.rooms.map((room) => (
+            room.originalMeasurements && (
+              <p key={room.id}>
+                • {room.name}: {room.originalMeasurements.width} × {room.originalMeasurements.depth}
+              </p>
+            )
+          ))}
+          <p className="pt-2 border-t border-slate-600 mt-2">
+            • Ceiling Height: {whateleyRoadFloorplan.ceilingHeight}m
+          </p>
         </div>
       </div>
     </div>
