@@ -275,48 +275,61 @@ export function generateSyntheticContours(
     );
   }
 
-  // Fallback for rooms without labelPosition - use grid layout
+  // Fallback for rooms without labelPosition - use improved spatial distribution
   if (roomsWithoutLabels.length > 0) {
-    console.warn('Using grid fallback for rooms without spatial data');
+    console.warn(`⚠ ${roomsWithoutLabels.length} rooms missing labelPosition - using intelligent fallback`);
 
-    const cols = Math.ceil(Math.sqrt(roomsWithoutLabels.length));
+    // IMPROVED: Use horizontal flow layout instead of grid stacking
+    // This creates a more natural left-to-right arrangement rather than vertical stacking
+    let currentX = 100; // Start with left margin
+    const baseY = imageHeight / 2; // Center vertically
+    const roomSpacing = 50; // Space between rooms
 
     roomsWithoutLabels.forEach((room, index) => {
-      const row = Math.floor(index / cols);
-      const col = index % cols;
+      // Convert room dimensions to pixels
+      const bboxWidth = room.width * pixelsPerSqMeter;
+      const bboxHeight = room.depth * pixelsPerSqMeter;
 
-      const cellWidth = imageWidth / cols;
-      const cellHeight = imageHeight / Math.ceil(roomsWithoutLabels.length / cols);
-
-      const aspectRatio = room.width / room.depth;
-      let bboxWidth = cellWidth * 0.8;
-      let bboxHeight = bboxWidth / aspectRatio;
-
-      if (bboxHeight > cellHeight * 0.8) {
-        bboxHeight = cellHeight * 0.8;
-        bboxWidth = bboxHeight * aspectRatio;
-      }
-
-      const x = col * cellWidth + (cellWidth - bboxWidth) / 2;
-      const y = row * cellHeight + (cellHeight - bboxHeight) / 2;
+      // Position rooms in horizontal flow, offsetting vertically for variety
+      const verticalOffset = (index % 2 === 0) ? -bboxHeight / 4 : bboxHeight / 4;
+      const y = baseY - bboxHeight / 2 + verticalOffset;
 
       unified.push({
         ...room,
         bbox: {
-          x: Math.round(x),
+          x: Math.round(currentX),
           y: Math.round(y),
           width: Math.round(bboxWidth),
           height: Math.round(bboxHeight)
         },
         centroid: {
-          x: Math.round(x + bboxWidth / 2),
+          x: Math.round(currentX + bboxWidth / 2),
           y: Math.round(y + bboxHeight / 2)
         },
         areaPixels: Math.round(bboxWidth * bboxHeight)
       });
 
-      console.log(`⚠ Positioned "${room.name}" using grid fallback`);
+      console.warn(
+        `⚠ FALLBACK POSITION: "${room.name}" at (${Math.round(currentX + bboxWidth / 2)}, ${Math.round(y + bboxHeight / 2)}) ` +
+        `[Missing labelPosition - using horizontal flow layout]`
+      );
+
+      // Move X position for next room
+      currentX += bboxWidth + roomSpacing;
+
+      // Wrap to next row if we exceed image width
+      if (currentX > imageWidth - 100) {
+        currentX = 100;
+        // Could add vertical row shifting here if needed
+      }
     });
+
+    console.error(
+      `⚠ CRITICAL: ${roomsWithoutLabels.length} rooms positioned using fallback algorithm\n` +
+      `  → These rooms may not be in correct spatial positions\n` +
+      `  → Claude Vision API failed to provide labelPosition coordinates\n` +
+      `  → 3D model spatial accuracy is COMPROMISED for these rooms`
+    );
   }
 
   console.log(`✓ Generated ${unified.length} synthetic contours using Claude's spatial understanding`);
