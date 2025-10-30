@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { Upload, FileImage } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import heroBackground from "@/assets/hero-background.png";
+import heroBackground from "@/assets/hero-background-autumn.png";
 
 interface FloorplanUploadProps {
   onFloorplanUploaded: (imageData: string) => void;

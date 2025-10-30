@@ -208,7 +208,7 @@ DUPLICATE PREVENTION (CRITICAL):
     const seenRooms = new Map<string, any>(); // normalized name -> room data
     const originalCount = claudeData.rooms.length;
 
-    // Helper: Normalize room name for comparison
+    // Helper: Normalize room name for comparison (MORE AGGRESSIVE)
     function normalizeRoomName(name: string): string {
       return name
         .toLowerCase()
@@ -217,6 +217,9 @@ DUPLICATE PREVENTION (CRITICAL):
         .replace(/bathroom(\d)/g, 'bath$1')
         .replace(/reception/g, 'living') // Treat reception = living
         .replace(/lounge/g, 'living')
+        .replace(/dining/g, '') // Remove dining to catch "living/dining" = "living"
+        .replace(/room/g, '') // Remove "room" word
+        .replace(/kitchen/g, 'kit') // Shorten kitchen
         .replace(/wc/g, 'bathroom'); // WC = bathroom
     }
 
@@ -237,8 +240,8 @@ DUPLICATE PREVENTION (CRITICAL):
         const existingArea = existingRoom.width * existingRoom.depth;
         const similarity = areaSimilarity(area, existingArea);
 
-        if (similarity > 0.8) {
-          // Very similar - likely a duplicate
+        if (similarity > 0.9) {
+          // Very similar (>90%) - likely a duplicate
           console.warn(`⚠ Duplicate room detected and removed: "${room.name}" (similar to "${existingRoom.name}", ${(similarity * 100).toFixed(0)}% area match)`);
 
           // Keep the one with more complete data or longer name (often has more info)
@@ -249,13 +252,17 @@ DUPLICATE PREVENTION (CRITICAL):
         } else {
           // Different areas - might be genuinely different rooms (e.g., Bedroom 1 vs Bedroom 2)
           console.log(`⚠ Potential duplicate with different size: "${room.name}" vs "${existingRoom.name}" (${(similarity * 100).toFixed(0)}% match)`);
-          // Add a suffix to make it unique
+          // Add a suffix to make it unique AND update the room ID
           let suffix = 2;
           let uniqueKey = `${normalized}${suffix}`;
           while (seenRooms.has(uniqueKey)) {
             suffix++;
             uniqueKey = `${normalized}${suffix}`;
           }
+          // CRITICAL: Update room.id to prevent React key conflicts
+          const originalId = room.id;
+          room.id = `${room.id}-${suffix}`;
+          console.log(`  → Updated room ID: "${originalId}" → "${room.id}"`);
           seenRooms.set(uniqueKey, room);
         }
       } else {
