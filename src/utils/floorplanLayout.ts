@@ -1,18 +1,26 @@
-import type { 
-  FloorplanData, 
-  Room, 
-  ParsedRoomData, 
-  AIFloorplanResponse 
+import type {
+  FloorplanData,
+  Room,
+  ParsedRoomData,
+  AIFloorplanResponse,
+  AdjacencyRelation,
+  EdgeDirection
 } from '@/types/floorplan';
 
 const WALL_THICKNESS = 0.1; // meters
 
 /**
- * Main layout algorithm - uses intelligent clustering
- * No longer relies on adjacency data from AI
+ * Main layout algorithm - uses BFS with adjacency data if available
  */
 export function calculateConnectedLayout(aiResponse: AIFloorplanResponse): FloorplanData {
-  console.log('Using intelligent clustering layout (no adjacency required)');
+  // If we have adjacency data, use BFS layout algorithm
+  if (aiResponse.adjacency && aiResponse.adjacency.length > 0) {
+    console.log('Using BFS layout with adjacency data');
+    return arrangeWithBFS(aiResponse);
+  }
+
+  // Fallback to grid-based layout
+  console.log('Using intelligent clustering layout (no adjacency data)');
   return arrangeInGrid(aiResponse);
 }
 
@@ -86,6 +94,186 @@ function calculateMinDistance(r1: Room, r2: Room): number {
   }
   
   return Math.max(xDistance, zDistance);
+}
+
+/**
+ * BFS-based layout algorithm using adjacency data
+ * Positions rooms based on their spatial relationships
+ */
+function arrangeWithBFS(aiResponse: AIFloorplanResponse): FloorplanData {
+  const { rooms, adjacency, ceilingHeight, entryRoomId } = aiResponse;
+
+  if (!adjacency || adjacency.length === 0) {
+    console.warn('No adjacency data, falling back to grid layout');
+    return arrangeInGrid(aiResponse);
+  }
+
+  // Build adjacency graph
+  const adjacencyMap = new Map<string, Array<{ roomId: string; edge: EdgeDirection }>>();
+
+  for (const adj of adjacency) {
+    // Add forward edge (room1 -> room2)
+    if (!adjacencyMap.has(adj.room1)) {
+      adjacencyMap.set(adj.room1, []);
+    }
+    adjacencyMap.get(adj.room1)!.push({
+      roomId: adj.room2,
+      edge: adj.edge
+    });
+
+    // Add reverse edge (room2 -> room1)
+    if (!adjacencyMap.has(adj.room2)) {
+      adjacencyMap.set(adj.room2, []);
+    }
+    const reverseEdge = getOppositeEdge(adj.edge);
+    adjacencyMap.get(adj.room2)!.push({
+      roomId: adj.room1,
+      edge: reverseEdge
+    });
+  }
+
+  // BFS to position rooms
+  const positioned = new Map<string, Room>();
+  const queue: string[] = [];
+
+  // Start with entry room or first room
+  const startRoomId = entryRoomId || rooms[0].id;
+  const startRoom = rooms.find(r => r.id === startRoomId);
+
+  if (!startRoom) {
+    console.error('Start room not found, falling back to grid layout');
+    return arrangeInGrid(aiResponse);
+  }
+
+  // Position start room at origin
+  positioned.set(startRoom.id, {
+    id: startRoom.id,
+    name: startRoom.name,
+    position: [0, 0, 0],
+    dimensions: [startRoom.width, ceilingHeight, startRoom.depth],
+    color: startRoom.color,
+    originalMeasurements: startRoom.originalMeasurements
+  });
+
+  queue.push(startRoom.id);
+
+  // BFS traversal
+  while (queue.length > 0) {
+    const currentRoomId = queue.shift()!;
+    const currentRoom = positioned.get(currentRoomId)!;
+    const neighbors = adjacencyMap.get(currentRoomId) || [];
+
+    for (const neighbor of neighbors) {
+      // Skip if already positioned
+      if (positioned.has(neighbor.roomId)) continue;
+
+      const neighborData = rooms.find(r => r.id === neighbor.roomId);
+      if (!neighborData) continue;
+
+      // Calculate position based on edge direction
+      const newPosition = calculateAdjacentPosition(
+        currentRoom,
+        [neighborData.width, ceilingHeight, neighborData.depth],
+        neighbor.edge
+      );
+
+      // Create positioned room
+      positioned.set(neighbor.roomId, {
+        id: neighborData.id,
+        name: neighborData.name,
+        position: newPosition,
+        dimensions: [neighborData.width, ceilingHeight, neighborData.depth],
+        color: neighborData.color,
+        originalMeasurements: neighborData.originalMeasurements
+      });
+
+      queue.push(neighbor.roomId);
+    }
+  }
+
+  // Handle any unconnected rooms (place them in a row at the bottom)
+  let offsetX = 0;
+  const unconnectedZ = -10; // Place disconnected rooms far down
+
+  for (const room of rooms) {
+    if (!positioned.has(room.id)) {
+      console.warn(`Room ${room.id} not connected in adjacency graph, placing separately`);
+
+      positioned.set(room.id, {
+        id: room.id,
+        name: room.name,
+        position: [offsetX + room.width / 2, 0, unconnectedZ],
+        dimensions: [room.width, ceilingHeight, room.depth],
+        color: room.color,
+        originalMeasurements: room.originalMeasurements
+      });
+
+      offsetX += room.width + WALL_THICKNESS;
+    }
+  }
+
+  const finalRooms = Array.from(positioned.values());
+
+  console.log(`BFS layout positioned ${finalRooms.length} rooms using ${adjacency.length} adjacencies`);
+
+  return {
+    id: aiResponse.id,
+    address: aiResponse.address,
+    totalAreaSqFt: aiResponse.totalAreaSqFt,
+    totalAreaSqM: aiResponse.totalAreaSqM,
+    ceilingHeight: aiResponse.ceilingHeight,
+    rooms: finalRooms
+  };
+}
+
+/**
+ * Get the opposite edge direction
+ */
+function getOppositeEdge(edge: EdgeDirection): EdgeDirection {
+  const opposites: Record<EdgeDirection, EdgeDirection> = {
+    north: 'south',
+    south: 'north',
+    east: 'west',
+    west: 'east'
+  };
+  return opposites[edge];
+}
+
+/**
+ * Calculate position for adjacent room based on edge direction
+ */
+function calculateAdjacentPosition(
+  baseRoom: Room,
+  newDimensions: [number, number, number],
+  edge: EdgeDirection
+): [number, number, number] {
+  const [baseX, baseY, baseZ] = baseRoom.position;
+  const [baseWidth, , baseDepth] = baseRoom.dimensions;
+  const [newWidth, , newDepth] = newDimensions;
+
+  let x = baseX;
+  let z = baseZ;
+
+  switch (edge) {
+    case 'north': // +Z direction
+      x = baseX;
+      z = baseZ + (baseDepth / 2) + (newDepth / 2) + WALL_THICKNESS;
+      break;
+    case 'south': // -Z direction
+      x = baseX;
+      z = baseZ - (baseDepth / 2) - (newDepth / 2) - WALL_THICKNESS;
+      break;
+    case 'east': // +X direction
+      x = baseX + (baseWidth / 2) + (newWidth / 2) + WALL_THICKNESS;
+      z = baseZ;
+      break;
+    case 'west': // -X direction
+      x = baseX - (baseWidth / 2) - (newWidth / 2) - WALL_THICKNESS;
+      z = baseZ;
+      break;
+  }
+
+  return [x, 0, z];
 }
 
 /**
