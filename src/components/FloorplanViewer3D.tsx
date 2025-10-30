@@ -258,27 +258,41 @@ const Room3D = ({
         <meshStandardMaterial color="#E8E4D9" opacity={0.85} transparent roughness={0.7} metalness={0.05} />
       </mesh>
 
-      {/* Room label with architectural styling */}
+      {/* Room label background panel */}
+      <mesh position={[0, height + 0.3, 0]}>
+        <planeGeometry args={[Math.min(width - 0.2, room.name.length * 0.15 + 0.4), 0.35]} />
+        <meshBasicMaterial 
+          color="#000000" 
+          transparent 
+          opacity={0.3}
+          depthTest={false}
+        />
+      </mesh>
+
+      {/* Room label with refined styling */}
       <Text
-        position={[0, height + 0.3, 0]}
-        fontSize={0.22}
-        color="rgba(255, 255, 255, 0.9)"
+        position={[0, height + 0.3, 0.01]}
+        fontSize={0.19}
+        color="rgba(255, 255, 255, 0.95)"
         anchorX="center"
         anchorY="middle"
         maxWidth={width - 0.2}
-        letterSpacing={0.05}
+        letterSpacing={0.02}
+        fontWeight={500}
+        outlineWidth={0.01}
+        outlineColor="rgba(0, 0, 0, 0.4)"
       >
         {room.name}
       </Text>
 
-      {/* Dimensions label */}
+      {/* Dimensions label - smaller and lighter */}
       <Text
         position={[0, height - 0.2, 0]}
-        fontSize={0.11}
-        color="rgba(245, 245, 220, 0.7)"
+        fontSize={0.17}
+        color="rgba(255, 255, 255, 0.7)"
         anchorX="center"
         anchorY="middle"
-        letterSpacing={0.03}
+        letterSpacing={0.02}
       >
         {width.toFixed(2)}m × {depth.toFixed(2)}m
       </Text>
@@ -338,18 +352,26 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
     <div className="relative w-full h-screen" style={{
       background: 'linear-gradient(135deg, rgba(101, 67, 33, 0.3) 0%, rgba(15, 23, 42, 0.95) 100%)'
     }}>
-      {/* Top Bar */}
+      {/* Top Bar with gradient overlay */}
       <div className="absolute top-0 left-0 right-0 z-10 pt-8 pb-16 px-12" style={{
         background: 'linear-gradient(to bottom, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0) 100%)',
         backdropFilter: 'blur(20px)',
         borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
       }}>
+        {/* Subtle gradient fade at bottom */}
+        <div className="absolute bottom-0 left-0 right-0 h-[60px] pointer-events-none" style={{
+          background: 'linear-gradient(to bottom, transparent 0%, rgba(139, 115, 85, 0.1) 100%)'
+        }} />
+        
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <h2 className="text-[2rem] font-playfair font-normal tracking-wide" style={{ color: '#F5F5DC' }}>
               {floorplanData.address || 'Untitled Property'}
             </h2>
-            <p className="text-sm font-inter mt-1" style={{ color: 'rgba(245, 245, 220, 0.7)' }}>
+            <p className="text-[0.95rem] font-inter mt-1 font-normal tracking-wider" style={{ 
+              color: 'rgba(245, 245, 220, 0.6)',
+              letterSpacing: '0.03em'
+            }}>
               {floorplanData.rooms.filter(r => r.name.includes('Bedroom')).length} Bed Ground Floor Flat • {floorplanData.totalAreaSqFt} sq ft
             </p>
           </div>
@@ -377,39 +399,67 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
               }}
               variant={validation.isValid ? "secondary" : "destructive"}
               size="sm"
-              className="font-inter font-medium text-[0.9rem] tracking-wider px-6 py-3 rounded-md transition-all duration-200 hover:-translate-y-0.5"
+              className="font-inter font-medium tracking-wider rounded-lg transition-all duration-200"
               style={{
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                backdropFilter: 'blur(12px)',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1.5px solid rgba(255, 255, 255, 0.15)',
+                backdropFilter: 'blur(16px)',
                 color: '#F5F5DC',
-                letterSpacing: '0.03em'
+                letterSpacing: '0.025em',
+                padding: '0.65rem 1.25rem',
+                fontWeight: 500
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
               }}
             >
               {validation.isValid ? (
                 <>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  <CheckCircle2 className="mr-2 h-4 w-4" style={{ opacity: 0.9 }} />
                   Valid Layout
                 </>
               ) : (
                 <>
-                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  <AlertTriangle className="mr-2 h-4 w-4" style={{ opacity: 0.9 }} />
                   {validation.overlaps.length + validation.gaps.length} Issues
                 </>
               )}
             </Button>
             <Button 
               onClick={onBack}
-              className="font-inter font-medium text-[0.9rem] tracking-wider px-6 py-3 rounded-md transition-all duration-200 hover:-translate-y-0.5"
+              className="font-inter font-medium tracking-wider rounded-lg transition-all duration-200"
               style={{
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                backdropFilter: 'blur(12px)',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1.5px solid rgba(255, 255, 255, 0.15)',
+                backdropFilter: 'blur(16px)',
                 color: '#F5F5DC',
-                letterSpacing: '0.03em'
+                letterSpacing: '0.025em',
+                padding: '0.65rem 1.25rem',
+                fontWeight: 500
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              <Home className="mr-2 h-4 w-4" />
+              <Home className="mr-2 h-4 w-4" style={{ opacity: 0.9 }} />
               Back to Upload
             </Button>
           </div>
@@ -510,33 +560,55 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
           );
         })}
 
-        {/* Ground plane with warm tones */}
+        {/* Ground plane with radial gradient spotlight effect */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
           <planeGeometry args={[50, 50]} />
-          <meshStandardMaterial color="#1a1f2e" opacity={0.6} transparent />
+          <meshStandardMaterial 
+            color="#3A3530"
+            roughness={0.9}
+            metalness={0.1}
+            opacity={0.95}
+            transparent
+          />
         </mesh>
       </Canvas>
 
-      {/* Controls Info */}
+      {/* Controls Info - Enhanced instruction bar */}
       <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-10">
-        <div className="px-8 py-5 rounded-lg font-inter text-[0.875rem]" style={{
-          background: 'rgba(20, 25, 35, 0.85)',
+        <div className="px-8 py-4 rounded-lg font-inter text-[0.875rem] font-normal" style={{
+          background: 'rgba(26, 24, 22, 0.9)',
           backdropFilter: 'blur(20px)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          color: 'rgba(245, 245, 220, 0.8)'
+          borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+          border: '1px solid rgba(255, 255, 255, 0.06)',
+          color: 'rgba(245, 245, 220, 0.75)'
         }}>
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <Move className="h-4 w-4" />
+              <Move className="h-4 w-4" style={{ opacity: 0.85 }} />
               <span>Select room → Drag to move • Scroll to zoom</span>
             </div>
             <Button
               onClick={handleReset}
               variant="ghost"
               size="sm"
-              className="font-inter font-medium transition-all duration-200 hover:-translate-y-0.5"
+              className="font-inter font-medium transition-all duration-200"
               style={{
-                color: 'rgba(245, 245, 220, 0.8)'
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1.5px solid rgba(255, 255, 255, 0.12)',
+                backdropFilter: 'blur(16px)',
+                color: 'rgba(245, 245, 220, 0.85)',
+                letterSpacing: '0.025em',
+                padding: '0.5rem 1rem',
+                fontWeight: 500,
+                borderRadius: '6px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
               }}
             >
               <RotateCcw className="mr-2 h-4 w-4" />
@@ -572,14 +644,28 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
             <Button
               onClick={() => rotateRoom(selectedRoom!)}
               size="sm"
-              className="flex-1 font-inter font-medium text-[0.85rem] transition-all duration-200 hover:-translate-y-0.5"
+              className="flex-1 font-inter font-medium text-[0.85rem] transition-all duration-200 rounded-md"
               style={{
-                background: 'rgba(255, 255, 255, 0.08)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                color: '#F5F5DC'
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1.5px solid rgba(255, 255, 255, 0.12)',
+                backdropFilter: 'blur(16px)',
+                color: '#F5F5DC',
+                letterSpacing: '0.025em',
+                fontWeight: 500,
+                padding: '0.5rem 1rem'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
-              <RotateCcw className="mr-2 h-4 w-4" />
+              <RotateCcw className="mr-2 h-4 w-4" style={{ opacity: 0.9 }} />
               Rotate
             </Button>
             <Button
@@ -588,11 +674,25 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
                 setSelectedRoom(null);
               }}
               size="sm"
-              className="flex-1 font-inter font-medium text-[0.85rem] transition-all duration-200 hover:-translate-y-0.5"
+              className="flex-1 font-inter font-medium text-[0.85rem] transition-all duration-200 rounded-md"
               style={{
-                background: 'rgba(255, 255, 255, 0.12)',
-                border: '1px solid rgba(255, 255, 255, 0.18)',
-                color: '#F5F5DC'
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1.5px solid rgba(255, 255, 255, 0.18)',
+                backdropFilter: 'blur(16px)',
+                color: '#F5F5DC',
+                letterSpacing: '0.025em',
+                fontWeight: 500,
+                padding: '0.5rem 1rem'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.14)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+                e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
               Edit
@@ -600,11 +700,23 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
             <Button
               onClick={() => setSelectedRoom(null)}
               size="sm"
-              className="font-inter font-medium text-[0.85rem] transition-all duration-200"
+              className="font-inter font-medium text-[0.85rem] transition-all duration-200 rounded-md"
               style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                color: 'rgba(245, 245, 220, 0.6)'
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1.5px solid rgba(255, 255, 255, 0.08)',
+                backdropFilter: 'blur(16px)',
+                color: 'rgba(245, 245, 220, 0.6)',
+                letterSpacing: '0.025em',
+                fontWeight: 500,
+                padding: '0.5rem 1rem'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
               }}
             >
               Close
@@ -726,11 +838,25 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
           </div>
           <Button
             onClick={() => setEditingRoom(null)}
-            className="mt-4 w-full font-inter font-medium transition-all duration-200 hover:-translate-y-0.5"
+            className="mt-4 w-full font-inter font-medium transition-all duration-200 rounded-md"
             style={{
-              background: 'rgba(255, 255, 255, 0.12)',
-              border: '1px solid rgba(255, 255, 255, 0.18)',
-              color: '#F5F5DC'
+              background: 'rgba(255, 255, 255, 0.1)',
+              border: '1.5px solid rgba(255, 255, 255, 0.18)',
+              backdropFilter: 'blur(16px)',
+              color: '#F5F5DC',
+              letterSpacing: '0.025em',
+              fontWeight: 500,
+              padding: '0.65rem 1.25rem'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.14)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+              e.currentTarget.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+              e.currentTarget.style.transform = 'translateY(0)';
             }}
           >
             Done Editing
