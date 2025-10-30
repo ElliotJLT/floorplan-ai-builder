@@ -15,7 +15,7 @@ serve(async (req) => {
   }
 
   try {
-    const { imageData } = await req.json();
+    const { imageData, contours: frontendContours } = await req.json();
     
     if (!imageData) {
       throw new Error('No image data provided');
@@ -32,9 +32,18 @@ serve(async (req) => {
     // ========================================================================
     // STAGE 1: Computer Vision - Detect Room Boundaries
     // ========================================================================
-    console.log('\n--- STAGE 1: Computer Vision Room Detection ---');
-    const contours = await detectRoomBoundaries(imageData);
-    console.log(`✓ Detected ${contours.length} room boundaries via CV`);
+    console.log('\n--- STAGE 1: Room Boundary Detection ---');
+    
+    let contours;
+    if (frontendContours && Array.isArray(frontendContours) && frontendContours.length > 0) {
+      console.log(`✅ Using ${frontendContours.length} pre-computed contours from frontend CV`);
+      console.log('  → Backend CV skipped (frontend-first architecture)');
+      contours = frontendContours;
+    } else {
+      console.log('⚠️  No frontend contours provided, attempting backend CV...');
+      contours = await detectRoomBoundaries(imageData);
+      console.log(`✓ Detected ${contours.length} room boundaries via backend CV`);
+    }
 
     // ========================================================================
     // STAGE 2: Claude Vision - Extract Semantic Labels

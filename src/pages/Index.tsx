@@ -14,7 +14,7 @@ const Index = () => {
   const [floorplanData, setFloorplanData] = useState<FloorplanData | null>(null);
   const [fadeOut, setFadeOut] = useState(false);
 
-  const handleFloorplanUploaded = async (imageData: string) => {
+  const handleFloorplanUploaded = async (imageData: string, contours?: any[]) => {
     setUploadedImage(imageData);
     setViewState("analyzing");
 
@@ -22,7 +22,10 @@ const Index = () => {
       toast.info("Analyzing floorplan with AI...");
 
       const { data, error } = await supabase.functions.invoke('analyze-floorplan', {
-        body: { imageData }
+        body: { 
+          imageData,
+          contours: contours || null 
+        }
       });
 
       if (error) {

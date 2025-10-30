@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Upload, FileImage, ArrowLeft } from "lucide-react";
+import { Upload, FileImage, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import heroBackground from "@/assets/hero-background-autumn.png";
+import { detectRoomBoundaries, RoomContour } from "@/utils/clientCV";
 
 const buildingMessages = [
   "Summoning the architectural spirits...",
@@ -23,7 +24,7 @@ const buildingMessages = [
 ];
 
 interface FloorplanUploadProps {
-  onFloorplanUploaded: (imageData: string) => void;
+  onFloorplanUploaded: (imageData: string, contours?: RoomContour[]) => void;
   isAnalyzing?: boolean;
   previewImage?: string | null;
 }
@@ -33,8 +34,13 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
   const [preview, setPreview] = useState<string | null>(null);
   const [additionalImages, setAdditionalImages] = useState<(string | null)[]>([null, null, null]);
   const [buildingMessage, setBuildingMessage] = useState(buildingMessages[0]);
+  const [detectedContours, setDetectedContours] = useState<RoomContour[] | null>(null);
+  const [overlayCanvas, setOverlayCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [showOverlay, setShowOverlay] = useState(true);
+  const [isProcessingCV, setIsProcessingCV] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const additionalInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Cycle through building messages while analyzing
   useEffect(() => {
@@ -94,12 +100,28 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
     }
 
     try {
+      setIsProcessingCV(true);
       const compressed = await compressImage(file);
       setPreview(compressed);
-      toast.success("Floorplan uploaded! Add more images or click Analyze.");
+      
+      // Run CV detection
+      toast.info("Detecting room boundaries...");
+      const { contours, overlayCanvas } = await detectRoomBoundaries(compressed);
+      
+      setDetectedContours(contours);
+      setOverlayCanvas(overlayCanvas);
+      setShowOverlay(true);
+      
+      if (contours.length === 0) {
+        toast.warning("No room boundaries detected. AI will analyze the layout.");
+      } else {
+        toast.success(`Detected ${contours.length} room boundaries! Review and click Analyze.`);
+      }
     } catch (e) {
       console.error(e);
       toast.error("Failed to process image. Please try another file.");
+    } finally {
+      setIsProcessingCV(false);
     }
   }, [compressImage]);
 
@@ -129,8 +151,8 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
       return;
     }
     toast.info("Analyzing floorplan with AI...");
-    onFloorplanUploaded(preview);
-  }, [preview, onFloorplanUploaded]);
+    onFloorplanUploaded(preview, detectedContours || undefined);
+  }, [preview, detectedContours, onFloorplanUploaded]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -148,6 +170,23 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
   const triggerFileSelect = () => {
     fileInputRef.current?.click();
   };
+
+  // Draw overlay on preview canvas
+  useEffect(() => {
+    if (!previewCanvasRef.current || !preview || !overlayCanvas || !showOverlay) return;
+    
+    const canvas = previewCanvasRef.current;
+    const ctx = canvas.getContext('2d')!;
+    
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(overlayCanvas, 0, 0);
+    };
+    img.src = preview;
+  }, [preview, overlayCanvas, showOverlay]);
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -220,16 +259,46 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
               <div className="space-y-6">
                 {/* Main floorplan preview - Desktop: horizontal, Mobile: vertical */}
                 <div className="space-y-4">
-                  <h3 className="text-lg md:text-xl font-medium text-white">Main Floorplan</h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg md:text-xl font-medium text-white">Main Floorplan</h3>
+                    {detectedContours && detectedContours.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowOverlay(!showOverlay)}
+                        className="text-white hover:bg-white/10"
+                      >
+                        {showOverlay ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
+                        {showOverlay ? "Hide" : "Show"} Boundaries
+                      </Button>
+                    )}
+                  </div>
                   
                   {/* Desktop: Horizontal Layout */}
                   <div className="hidden md:flex gap-4 items-start">
-                    <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 flex-shrink-0">
-                      <img 
-                        src={preview} 
-                        alt="Floorplan preview" 
-                        className="w-80 h-auto rounded-lg"
-                      />
+                    <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 flex-shrink-0 relative">
+                      {isProcessingCV && (
+                        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm rounded-lg flex items-center justify-center z-10">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
+                        </div>
+                      )}
+                      {showOverlay && overlayCanvas ? (
+                        <canvas 
+                          ref={previewCanvasRef}
+                          className="w-80 h-auto rounded-lg"
+                        />
+                      ) : (
+                        <img 
+                          src={preview} 
+                          alt="Floorplan preview" 
+                          className="w-80 h-auto rounded-lg"
+                        />
+                      )}
+                      {detectedContours && detectedContours.length > 0 && (
+                        <div className="mt-2 text-xs text-green-400">
+                          ✓ {detectedContours.length} room{detectedContours.length > 1 ? 's' : ''} detected
+                        </div>
+                      )}
                     </div>
 
                     {/* Additional images - horizontal on desktop */}
@@ -270,12 +339,29 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
 
                   {/* Mobile: Vertical Layout */}
                   <div className="md:hidden space-y-4">
-                    <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-3">
-                      <img 
-                        src={preview} 
-                        alt="Floorplan preview" 
-                        className="w-full h-auto rounded-lg"
-                      />
+                    <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-3 relative">
+                      {isProcessingCV && (
+                        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm rounded-lg flex items-center justify-center z-10">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
+                        </div>
+                      )}
+                      {showOverlay && overlayCanvas ? (
+                        <canvas 
+                          ref={previewCanvasRef}
+                          className="w-full h-auto rounded-lg"
+                        />
+                      ) : (
+                        <img 
+                          src={preview} 
+                          alt="Floorplan preview" 
+                          className="w-full h-auto rounded-lg"
+                        />
+                      )}
+                      {detectedContours && detectedContours.length > 0 && (
+                        <div className="mt-2 text-xs text-green-400">
+                          ✓ {detectedContours.length} room{detectedContours.length > 1 ? 's' : ''} detected
+                        </div>
+                      )}
                     </div>
 
                     {/* Additional images section - below on mobile */}
