@@ -171,10 +171,21 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
     
     const img = new Image();
     img.onload = () => {
+      // Set canvas internal resolution
       canvas.width = img.width;
       canvas.height = img.height;
+      
+      // Draw original image
       ctx.drawImage(img, 0, 0);
+      
+      // Draw overlay on top
       ctx.drawImage(overlayCanvas, 0, 0);
+      
+      // Set display size via CSS to match container
+      const maxWidth = 320; // w-80 = 320px
+      const scale = Math.min(1, maxWidth / img.width);
+      canvas.style.width = `${img.width * scale}px`;
+      canvas.style.height = `${img.height * scale}px`;
     };
     img.src = preview;
   }, [preview, overlayCanvas]);
@@ -263,7 +274,7 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
                       {overlayCanvas ? (
                         <canvas 
                           ref={previewCanvasRef}
-                          className="w-80 h-auto rounded-lg"
+                          className="rounded-lg"
                         />
                       ) : (
                         <img 
@@ -326,7 +337,7 @@ export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, prev
                       {overlayCanvas ? (
                         <canvas 
                           ref={previewCanvasRef}
-                          className="w-full h-auto rounded-lg"
+                          className="rounded-lg w-full"
                         />
                       ) : (
                         <img 
