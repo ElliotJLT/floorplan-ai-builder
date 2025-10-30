@@ -6,12 +6,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { calculateConnectedLayout } from "@/utils/floorplanLayout";
 
-type ViewState = "upload" | "analyzing" | "viewing";
+type ViewState = "upload" | "analyzing" | "viewing" | "fading";
 
 const Index = () => {
   const [viewState, setViewState] = useState<ViewState>("upload");
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [floorplanData, setFloorplanData] = useState<FloorplanData | null>(null);
+  const [fadeOut, setFadeOut] = useState(false);
 
   const handleFloorplanUploaded = async (imageData: string) => {
     setUploadedImage(imageData);
@@ -40,7 +41,13 @@ const Index = () => {
       toast.success("3D model generated! Drag rooms to reposition.");
       
       setFloorplanData(layoutData);
-      setViewState("viewing");
+      
+      // Fade to black, then show 3D viewer
+      setFadeOut(true);
+      setTimeout(() => {
+        setViewState("viewing");
+        setTimeout(() => setFadeOut(false), 50);
+      }, 1000);
 
     } catch (error) {
       console.error('Error analyzing floorplan:', error);
@@ -62,30 +69,34 @@ const Index = () => {
 
   return (
     <>
-      {viewState === "upload" && (
-        <FloorplanUpload onFloorplanUploaded={handleFloorplanUploaded} />
-      )}
+      <div 
+        className={`transition-opacity duration-1000 ${fadeOut ? 'opacity-0' : 'opacity-100'}`}
+      >
+        {(viewState === "upload" || viewState === "analyzing") && (
+          <FloorplanUpload 
+            onFloorplanUploaded={handleFloorplanUploaded}
+            isAnalyzing={viewState === "analyzing"}
+            previewImage={uploadedImage}
+          />
+        )}
+        
+        {viewState === "viewing" && uploadedImage && floorplanData && (
+          <FloorplanViewer3D
+            floorplanImage={uploadedImage}
+            floorplanData={floorplanData}
+            onBack={handleBack}
+            onUpdate={handleUpdateFloorplan}
+          />
+        )}
+      </div>
       
-      {viewState === "analyzing" && (
-        <div className="min-h-screen flex items-center justify-center bg-background">
-          <div className="text-center space-y-4">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto" />
-            <h2 className="text-2xl font-semibold">Analyzing Floorplan...</h2>
-            <p className="text-muted-foreground max-w-md">
-              AI is extracting room dimensions and generating 3D layout
-            </p>
-          </div>
-        </div>
-      )}
-      
-      {viewState === "viewing" && uploadedImage && floorplanData && (
-        <FloorplanViewer3D
-          floorplanImage={uploadedImage}
-          floorplanData={floorplanData}
-          onBack={handleBack}
-          onUpdate={handleUpdateFloorplan}
-        />
-      )}
+      {/* Black fade overlay */}
+      <div 
+        className={`fixed inset-0 bg-black pointer-events-none transition-opacity duration-1000 ${
+          fadeOut ? 'opacity-100' : 'opacity-0'
+        }`}
+        style={{ zIndex: 9999 }}
+      />
     </>
   );
 };

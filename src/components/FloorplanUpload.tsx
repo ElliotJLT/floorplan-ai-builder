@@ -6,9 +6,11 @@ import heroBackground from "@/assets/hero-background.png";
 
 interface FloorplanUploadProps {
   onFloorplanUploaded: (imageData: string) => void;
+  isAnalyzing?: boolean;
+  previewImage?: string | null;
 }
 
-export const FloorplanUpload = ({ onFloorplanUploaded }: FloorplanUploadProps) => {
+export const FloorplanUpload = ({ onFloorplanUploaded, isAnalyzing = false, previewImage }: FloorplanUploadProps) => {
   const [isDragging, setIsDragging] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -83,9 +85,26 @@ export const FloorplanUpload = ({ onFloorplanUploaded }: FloorplanUploadProps) =
             onDragLeave={() => setIsDragging(false)}
             className="space-y-4"
           >
-            {preview ? (
+            {isAnalyzing && previewImage ? (
+              <div className="space-y-6">
+                <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 max-w-xs">
+                  <img 
+                    src={previewImage} 
+                    alt="Analyzing floorplan" 
+                    className="w-full h-auto rounded-lg"
+                  />
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white" />
+                  <div>
+                    <h3 className="text-xl font-medium text-white">Analyzing floorplan...</h3>
+                    <p className="text-sm text-white/70">AI is extracting room dimensions and generating 3D layout</p>
+                  </div>
+                </div>
+              </div>
+            ) : preview ? (
               <div className="space-y-4">
-                <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6">
+                <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 max-w-xs">
                   <img 
                     src={preview} 
                     alt="Floorplan preview" 
