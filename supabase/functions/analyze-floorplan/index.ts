@@ -292,6 +292,10 @@ DUPLICATE PREVENTION (CRITICAL):
       unifiedRooms = generateSyntheticContours(claudeData.rooms);
       usedSyntheticContours = true;
     }
+    
+    if (usedSyntheticContours) {
+      console.warn('⚠ Synthetic contours detected - skipping image-based positioning');
+    }
 
     // ========================================================================
     // STAGE 4: Agentic Verification - Determine Adjacency with AI Reasoning

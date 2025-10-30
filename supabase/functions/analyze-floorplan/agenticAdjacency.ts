@@ -107,7 +107,7 @@ When you have determined all adjacencies, return your final answer as a JSON arr
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4',
+          model: 'claude-sonnet-4-5',
           max_tokens: 4096,
           tools: toolDefinitions,
           messages: messages
@@ -241,7 +241,7 @@ export function detectAdjacencyGeometric(rooms: UnifiedRoomData[]): AdjacencyRel
   console.warn('Using fallback geometric adjacency detection');
 
   const adjacencies: AdjacencyRelation[] = [];
-  const DISTANCE_THRESHOLD = 15; // pixels
+  const DISTANCE_THRESHOLD = 25; // pixels - increased tolerance for synthetic contours
   const OVERLAP_THRESHOLD = 60; // percent
 
   for (let i = 0; i < rooms.length; i++) {

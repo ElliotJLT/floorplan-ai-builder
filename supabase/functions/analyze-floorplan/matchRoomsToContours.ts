@@ -78,6 +78,40 @@ export function matchRoomsToContours(
 
   console.log(`Matching ${claudeRooms.length} Claude rooms to ${contours.length} contours...`);
 
+  // Filter contours before matching
+  const imageArea = contours.reduce((sum, c) => sum + c.area, 0);
+  const avgArea = imageArea / Math.max(contours.length, 1);
+  
+  let tooSmall = 0;
+  let tooLarge = 0;
+  let badAspect = 0;
+  
+  const filteredContours = contours.filter(c => {
+    // Too small: area < 1000 px
+    if (c.area < 1000) {
+      tooSmall++;
+      return false;
+    }
+    
+    // Too large: area > 25% of total image area or 10x average
+    const maxArea = Math.min(imageArea * 0.25, avgArea * 10);
+    if (c.area > maxArea) {
+      tooLarge++;
+      return false;
+    }
+    
+    // Bad aspect ratio: width/height < 0.2 or > 5
+    const aspectRatio = c.bbox.width / c.bbox.height;
+    if (aspectRatio < 0.2 || aspectRatio > 5) {
+      badAspect++;
+      return false;
+    }
+    
+    return true;
+  });
+  
+  console.log(`Filtered: ${tooSmall} too small, ${tooLarge} too large, ${badAspect} bad aspect`);
+
   const unified: UnifiedRoomData[] = [];
   const usedContours = new Set<number>();
 
@@ -100,10 +134,10 @@ export function matchRoomsToContours(
     let matchType: 'exact' | 'near' | 'far' = 'far';
 
     // Strategy 1: Find contour where label is inside the bounding box
-    for (let i = 0; i < contours.length; i++) {
+    for (let i = 0; i < filteredContours.length; i++) {
       if (usedContours.has(i)) continue;
 
-      const contour = contours[i];
+      const contour = filteredContours[i];
 
       // Check if label is inside this contour (with 20px margin for edge labels)
       if (isPointInBox(room.labelPosition, contour.bbox, 20)) {
@@ -120,10 +154,10 @@ export function matchRoomsToContours(
 
     // Strategy 2: If no exact match, find nearest contour by centroid
     if (!bestContour) {
-      for (let i = 0; i < contours.length; i++) {
+      for (let i = 0; i < filteredContours.length; i++) {
         if (usedContours.has(i)) continue;
 
-        const contour = contours[i];
+        const contour = filteredContours[i];
         const dist = distance(room.labelPosition, contour.centroid);
 
         if (dist < bestDistance) {
@@ -167,7 +201,7 @@ export function matchRoomsToContours(
   }
 
   console.log(`Matching complete: ${exactMatches} exact, ${nearMatches} near, ${unmatched} unmatched`);
-  console.log(`${contours.length - usedContours.size} contours remain unused`);
+  console.log(`${filteredContours.length - usedContours.size} contours remain unused`);
 
   return unified;
 }

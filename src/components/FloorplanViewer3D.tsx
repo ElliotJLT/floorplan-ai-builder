@@ -385,7 +385,28 @@ export const FloorplanViewer3D = ({ floorplanImage, floorplanData, onBack, onUpd
       </div>
 
       {/* 3D Canvas */}
-      <Canvas shadows>
+      <Canvas 
+        shadows
+        gl={{ 
+          powerPreference: 'high-performance', 
+          antialias: true,
+          preserveDrawingBuffer: true
+        }}
+        onCreated={({ gl }) => {
+          // Handle WebGL context loss
+          gl.domElement.addEventListener('webglcontextlost', (e) => {
+            e.preventDefault();
+            console.warn('WebGL context lost, attempting to restore...');
+          });
+          
+          gl.domElement.addEventListener('webglcontextrestored', () => {
+            console.log('WebGL context restored');
+          });
+          
+          // Limit pixel ratio on high-DPI displays to prevent context loss
+          gl.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        }}
+      >
         <PerspectiveCamera makeDefault position={[12, 10, 12]} />
         <OrbitControls 
           ref={controlsRef}
