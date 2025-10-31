@@ -123,7 +123,8 @@ export function matchRoomsToContours(
   // For each Claude room, find the best matching contour
   for (const room of claudeRooms) {
     if (!room.labelPosition) {
-      console.warn(`Room "${room.name}" (${room.id}) missing label position, skipping CV match`);
+      console.warn(`Room "${room.name}" (${room.id}) missing label position - will use synthetic contour`);
+      // DON'T skip - we'll add it later with synthetic data
       unmatched++;
       continue;
     }
@@ -195,13 +196,75 @@ export function matchRoomsToContours(
       unmatched++;
       console.warn(
         `✗ Could not match room "${room.name}" to any contour ` +
-        `(min distance: ${Math.round(bestDistance)}px, threshold: ${maxDistance}px)`
+        `(min distance: ${Math.round(bestDistance)}px, threshold: ${maxDistance}px) - will use synthetic contour`
       );
+      // DON'T discard - add below with synthetic data
     }
   }
 
   console.log(`Matching complete: ${exactMatches} exact, ${nearMatches} near, ${unmatched} unmatched`);
-  console.log(`${filteredContours.length - usedContours.size} contours remain unused`);
+
+  // PRESERVE UNMATCHED CLAUDE ROOMS: Add them with synthetic contours
+  const unmatchedRooms = claudeRooms.filter(room => {
+    return !unified.find(u => u.id === room.id);
+  });
+
+  if (unmatchedRooms.length > 0) {
+    console.log(`📦 Adding ${unmatchedRooms.length} unmatched Claude rooms with synthetic contours...`);
+
+    // Calculate synthetic positions for unmatched rooms
+    const pixelsPerMeter = 50; // Reasonable default
+    let nextX = 100;
+    let nextY = 100;
+
+    for (const room of unmatchedRooms) {
+      const width = room.width * pixelsPerMeter;
+      const height = room.depth * pixelsPerMeter;
+
+      unified.push({
+        ...room,
+        bbox: { x: nextX, y: nextY, width, height },
+        centroid: { x: nextX + width/2, y: nextY + height/2 },
+        areaPixels: width * height
+      });
+
+      console.log(`  ✓ Added "${room.name}" with synthetic contour at (${nextX}, ${nextY})`);
+
+      // Position next room to the right
+      nextX += width + 20;
+      if (nextX > 800) {
+        nextX = 100;
+        nextY += height + 20;
+      }
+    }
+  }
+
+  // PRESERVE UNUSED CV CONTOURS: Add them as generic rooms
+  const unusedContours = filteredContours.filter((_, idx) => !usedContours.has(idx));
+
+  if (unusedContours.length > 0) {
+    console.log(`📦 Adding ${unusedContours.length} unused CV contours as generic rooms...`);
+
+    for (let i = 0; i < unusedContours.length; i++) {
+      const contour = unusedContours[i];
+      const roomId = `cv-detected-${i + 1}`;
+
+      unified.push({
+        id: roomId,
+        name: `Detected Room ${i + 1}`,
+        width: contour.bbox.width / 50, // Convert pixels to rough meters
+        depth: contour.bbox.height / 50,
+        color: '#888888', // Gray for unidentified rooms
+        bbox: contour.bbox,
+        centroid: contour.centroid,
+        areaPixels: contour.area
+      });
+
+      console.log(`  ✓ Added CV-detected room at (${Math.round(contour.centroid.x)}, ${Math.round(contour.centroid.y)})`);
+    }
+  }
+
+  console.log(`\n✅ Total unified rooms: ${unified.length} (${exactMatches} matched, ${unmatchedRooms.length} unmatched Claude, ${unusedContours.length} unmatched CV)`);
 
   return unified;
 }

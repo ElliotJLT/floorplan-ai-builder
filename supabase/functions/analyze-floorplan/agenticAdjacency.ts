@@ -277,9 +277,10 @@ When you have determined all adjacencies, return your final answer as a JSON arr
  * Geometric adjacency detection using spatial analysis
  * Fast, deterministic, and reliable - no AI token usage
  *
- * IMPROVED: Adaptive overlap thresholds for Claude-based spatial layouts
- * - Accepts 0% overlap for rooms < 20px apart (handles synthetic contours)
- * - Requires 50% overlap for rooms ≥ 20px apart (filters false positives)
+ * REALISTIC THRESHOLDS based on actual floorplan testing:
+ * - Distance ≤ 30px (allows for CV detection imperfections)
+ * - Overlap ≥ 30% for normal adjacency (real rooms have 30-45% alignment)
+ * - Overlap = 0% for very close rooms < 20px (handles synthetic contours)
  */
 export function detectAdjacencyGeometric(rooms: UnifiedRoomData[]): AdjacencyRelation[] {
   console.log('🔍 Starting geometric adjacency detection...');
@@ -289,10 +290,10 @@ export function detectAdjacencyGeometric(rooms: UnifiedRoomData[]): AdjacencyRel
 
   const adjacencies: AdjacencyRelation[] = [];
 
-  // IMPROVED: Use tighter thresholds when we have Claude's spatial understanding
-  // Looser thresholds for grid-based layouts where positioning is approximate
-  const DISTANCE_THRESHOLD = hasClaudeSpatialData ? 15 : 30; // pixels
-  const OVERLAP_THRESHOLD = hasClaudeSpatialData ? 50 : 60; // percent
+  // REALISTIC THRESHOLDS based on actual floorplan testing
+  // Real rooms often have 30-45% overlap and can be 20-30px apart due to CV imperfections
+  const DISTANCE_THRESHOLD = 30; // pixels - allow for CV detection imperfections
+  const OVERLAP_THRESHOLD = 30; // percent - realistic edge-sharing alignment
 
   console.log(
     `Using ${hasClaudeSpatialData ? 'Claude spatial data' : 'grid fallback'} thresholds: ` +
