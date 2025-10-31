@@ -138,31 +138,76 @@ function binaryThreshold(gray: Uint8Array): Uint8Array {
 }
 
 /**
- * Simple edge detection (Sobel-like)
+ * Edge detection on grayscale (before thresholding)
+ * This preserves interior walls as edges, which would be lost in binary thresholding
  */
-function detectEdges(binary: Uint8Array, width: number, height: number): Uint8Array {
-  const edges = new Uint8Array(binary.length);
+function detectEdgesGrayscale(gray: Uint8Array, width: number, height: number): Uint8Array {
+  const edges = new Uint8Array(gray.length);
 
   for (let y = 1; y < height - 1; y++) {
     for (let x = 1; x < width - 1; x++) {
       const idx = y * width + x;
-      
+
       // Sobel kernels (horizontal and vertical)
-      const gx = 
-        -binary[(y - 1) * width + (x - 1)] + binary[(y - 1) * width + (x + 1)] +
-        -2 * binary[y * width + (x - 1)] + 2 * binary[y * width + (x + 1)] +
-        -binary[(y + 1) * width + (x - 1)] + binary[(y + 1) * width + (x + 1)];
+      const gx =
+        -gray[(y - 1) * width + (x - 1)] + gray[(y - 1) * width + (x + 1)] +
+        -2 * gray[y * width + (x - 1)] + 2 * gray[y * width + (x + 1)] +
+        -gray[(y + 1) * width + (x - 1)] + gray[(y + 1) * width + (x + 1)];
 
       const gy =
-        -binary[(y - 1) * width + (x - 1)] - 2 * binary[(y - 1) * width + x] - binary[(y - 1) * width + (x + 1)] +
-        binary[(y + 1) * width + (x - 1)] + 2 * binary[(y + 1) * width + x] + binary[(y + 1) * width + (x + 1)];
+        -gray[(y - 1) * width + (x - 1)] - 2 * gray[(y - 1) * width + x] - gray[(y - 1) * width + (x + 1)] +
+        gray[(y + 1) * width + (x - 1)] + 2 * gray[(y + 1) * width + x] + gray[(y + 1) * width + (x + 1)];
 
       const magnitude = Math.sqrt(gx * gx + gy * gy);
-      edges[idx] = magnitude > 100 ? 255 : 0;
+      // Lower threshold to catch interior walls (gray lines)
+      edges[idx] = magnitude > 30 ? 255 : 0;
     }
   }
 
   return edges;
+}
+
+/**
+ * Morphological dilation to thicken walls
+ * This ensures walls form complete separators between rooms
+ */
+function dilate(image: Uint8Array, width: number, height: number, iterations: number = 2): Uint8Array {
+  let current = new Uint8Array(image);
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const next = new Uint8Array(current.length);
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = y * width + x;
+
+        // If current pixel or any 4-neighbor is white, make it white
+        const hasWhiteNeighbor =
+          current[idx] === 255 ||
+          current[idx - 1] === 255 ||
+          current[idx + 1] === 255 ||
+          current[idx - width] === 255 ||
+          current[idx + width] === 255;
+
+        next[idx] = hasWhiteNeighbor ? 255 : 0;
+      }
+    }
+
+    current = next;
+  }
+
+  return current;
+}
+
+/**
+ * Invert image: black → white, white → black
+ */
+function invert(image: Uint8Array): Uint8Array {
+  const inverted = new Uint8Array(image.length);
+  for (let i = 0; i < image.length; i++) {
+    inverted[i] = 255 - image[i];
+  }
+  return inverted;
 }
 
 /**
@@ -264,28 +309,42 @@ export async function detectRoomBoundaries(imageData: string): Promise<RoomConto
     console.log('  → Converting to grayscale...');
     const gray = toGrayscale(pixels, width, height);
 
-    // Apply binary threshold
-    console.log('  → Applying binary threshold...');
-    const binary = binaryThreshold(gray);
+    // WALL-FIRST APPROACH: Detect edges on grayscale BEFORE thresholding
+    // This preserves interior walls (gray lines) as edges
+    console.log('  → Detecting walls (edge detection on grayscale)...');
+    const wallEdges = detectEdgesGrayscale(gray, width, height);
 
-    // Detect edges
-    console.log('  → Detecting edges...');
-    const edges = detectEdges(binary, width, height);
+    // Thicken walls to ensure they separate rooms completely
+    console.log('  → Enhancing walls (morphological dilation)...');
+    const thickWalls = dilate(wallEdges, width, height, 3); // 3 iterations for thick separation
 
-    // Find connected components (room regions)
-    console.log('  → Finding connected components...');
-    const minArea = Math.floor((width * height) * 0.005); // At least 0.5% of image (more sensitive)
-    const components = findConnectedComponents(edges, width, height, minArea);
+    // Invert: walls become black, rooms become white
+    console.log('  → Inverting (walls=black, rooms=white)...');
+    const inverted = invert(thickWalls);
+
+    // Find connected components (each white region = one room)
+    console.log('  → Finding room regions (connected components)...');
+    const minArea = Math.floor((width * height) * 0.01); // At least 1% of image
+    const components = findConnectedComponents(inverted, width, height, minArea);
 
     console.log(`  → Found ${components.length} potential room regions (before filtering)`);
 
-    // Filter components by reasonable size
+    // Filter components by reasonable room size
     const filtered = components.filter(c => {
       const area = c.bbox.width * c.bbox.height;
       const imageArea = width * height;
       const areaRatio = area / imageArea;
-      // Room should be between 1% and 60% of image (more tolerant)
-      return areaRatio >= 0.01 && areaRatio <= 0.6;
+
+      // Room should be between 2% and 50% of image
+      // Lower bound: filters out noise and labels
+      // Upper bound: filters out entire-floorplan detections
+      const sizeValid = areaRatio >= 0.02 && areaRatio <= 0.5;
+
+      // Aspect ratio check: rooms shouldn't be too elongated
+      const aspectRatio = c.bbox.width / c.bbox.height;
+      const aspectValid = aspectRatio >= 0.2 && aspectRatio <= 5.0; // Allow 5:1 ratio max
+
+      return sizeValid && aspectValid;
     });
 
     console.log(`  → Retained ${filtered.length} components after size/aspect filtering`);
