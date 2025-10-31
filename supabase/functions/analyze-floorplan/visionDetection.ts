@@ -159,8 +159,8 @@ function detectEdgesGrayscale(gray: Uint8Array, width: number, height: number): 
         gray[(y + 1) * width + (x - 1)] + 2 * gray[(y + 1) * width + x] + gray[(y + 1) * width + (x + 1)];
 
       const magnitude = Math.sqrt(gx * gx + gy * gy);
-      // Lower threshold to catch interior walls (gray lines)
-      edges[idx] = magnitude > 30 ? 255 : 0;
+      // Lower threshold to catch subtle interior walls and hallways
+      edges[idx] = magnitude > 20 ? 255 : 0;
     }
   }
 
@@ -168,10 +168,9 @@ function detectEdgesGrayscale(gray: Uint8Array, width: number, height: number): 
 }
 
 /**
- * Morphological dilation to thicken walls
- * This ensures walls form complete separators between rooms
+ * Morphological dilation to thicken edges
  */
-function dilate(image: Uint8Array, width: number, height: number, iterations: number = 2): Uint8Array {
+function dilate(image: Uint8Array, width: number, height: number, iterations: number = 1): Uint8Array {
   let current = new Uint8Array(image);
 
   for (let iter = 0; iter < iterations; iter++) {
@@ -197,6 +196,48 @@ function dilate(image: Uint8Array, width: number, height: number, iterations: nu
   }
 
   return current;
+}
+
+/**
+ * Morphological erosion to thin edges
+ */
+function erode(image: Uint8Array, width: number, height: number, iterations: number = 1): Uint8Array {
+  let current = new Uint8Array(image);
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const next = new Uint8Array(current.length);
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = y * width + x;
+
+        // Only keep white if current pixel AND all 4-neighbors are white
+        const allWhite =
+          current[idx] === 255 &&
+          current[idx - 1] === 255 &&
+          current[idx + 1] === 255 &&
+          current[idx - width] === 255 &&
+          current[idx + width] === 255;
+
+        next[idx] = allWhite ? 255 : 0;
+      }
+    }
+
+    current = next;
+  }
+
+  return current;
+}
+
+/**
+ * Morphological closing: dilation followed by erosion
+ * Closes small gaps in walls without permanently thickening them
+ * Prevents adjacent rooms from merging while keeping walls continuous
+ */
+function closing(image: Uint8Array, width: number, height: number, iterations: number = 1): Uint8Array {
+  const dilated = dilate(image, width, height, iterations);
+  const closed = erode(dilated, width, height, iterations);
+  return closed;
 }
 
 /**
@@ -314,17 +355,18 @@ export async function detectRoomBoundaries(imageData: string): Promise<RoomConto
     console.log('  → Detecting walls (edge detection on grayscale)...');
     const wallEdges = detectEdgesGrayscale(gray, width, height);
 
-    // Thicken walls to ensure they separate rooms completely
-    console.log('  → Enhancing walls (morphological dilation)...');
-    const thickWalls = dilate(wallEdges, width, height, 3); // 3 iterations for thick separation
+    // Close gaps in walls WITHOUT permanently thickening them
+    // This prevents adjacent rooms from merging while keeping walls continuous
+    console.log('  → Closing wall gaps (morphological closing)...');
+    const closedWalls = closing(wallEdges, width, height, 2); // 2 iterations to close small gaps
 
     // Invert: walls become black, rooms become white
     console.log('  → Inverting (walls=black, rooms=white)...');
-    const inverted = invert(thickWalls);
+    const inverted = invert(closedWalls);
 
     // Find connected components (each white region = one room)
     console.log('  → Finding room regions (connected components)...');
-    const minArea = Math.floor((width * height) * 0.01); // At least 1% of image
+    const minArea = Math.floor((width * height) * 0.005); // At least 0.5% of image (detects small bathrooms)
     const components = findConnectedComponents(inverted, width, height, minArea);
 
     console.log(`  → Found ${components.length} potential room regions (before filtering)`);
@@ -335,14 +377,15 @@ export async function detectRoomBoundaries(imageData: string): Promise<RoomConto
       const imageArea = width * height;
       const areaRatio = area / imageArea;
 
-      // Room should be between 2% and 50% of image
-      // Lower bound: filters out noise and labels
-      // Upper bound: filters out entire-floorplan detections
-      const sizeValid = areaRatio >= 0.02 && areaRatio <= 0.5;
+      // Room should be between 0.5% and 60% of image
+      // Lower bound: 0.5% allows small bathrooms/closets (was 2%, too high)
+      // Upper bound: 60% filters out entire-floorplan detections
+      const sizeValid = areaRatio >= 0.005 && areaRatio <= 0.6;
 
       // Aspect ratio check: rooms shouldn't be too elongated
+      // Allow wider range for hallways (long, narrow spaces)
       const aspectRatio = c.bbox.width / c.bbox.height;
-      const aspectValid = aspectRatio >= 0.2 && aspectRatio <= 5.0; // Allow 5:1 ratio max
+      const aspectValid = aspectRatio >= 0.15 && aspectRatio <= 7.0; // Allow 7:1 for hallways
 
       return sizeValid && aspectValid;
     });
