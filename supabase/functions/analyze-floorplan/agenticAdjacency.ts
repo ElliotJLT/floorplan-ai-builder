@@ -274,13 +274,15 @@ When you have determined all adjacencies, return your final answer as a JSON arr
 }
 
 /**
- * Fallback: Simple geometric adjacency detection (no AI reasoning)
- * Used when agentic verification fails
+ * Geometric adjacency detection using spatial analysis
+ * Fast, deterministic, and reliable - no AI token usage
  *
- * IMPROVED: Better thresholds for Claude-based spatial layouts
+ * IMPROVED: Adaptive overlap thresholds for Claude-based spatial layouts
+ * - Accepts 0% overlap for rooms < 20px apart (handles synthetic contours)
+ * - Requires 50% overlap for rooms ≥ 20px apart (filters false positives)
  */
 export function detectAdjacencyGeometric(rooms: UnifiedRoomData[]): AdjacencyRelation[] {
-  console.warn('Using fallback geometric adjacency detection');
+  console.log('🔍 Starting geometric adjacency detection...');
 
   // Check if rooms have labelPosition (indicates Claude spatial data vs grid fallback)
   const hasClaudeSpatialData = rooms.some(r => r.labelPosition);

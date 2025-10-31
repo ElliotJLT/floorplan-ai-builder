@@ -2,7 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { detectRoomBoundaries } from './visionDetection.ts';
 import { matchRoomsToContours, generateSyntheticContours } from './matchRoomsToContours.ts';
-import { determineAdjacencyWithAgent, detectAdjacencyGeometric } from './agenticAdjacency.ts';
+import { detectAdjacencyGeometric } from './agenticAdjacency.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,8 +26,8 @@ serve(async (req) => {
       throw new Error('Claude API key not configured');
     }
 
-    console.log('=== HYBRID CV + AGENTIC LLM FLOORPLAN ANALYSIS ===');
-    console.log('Starting multi-stage analysis pipeline...');
+    console.log('=== HYBRID CV + CLAUDE VISION FLOORPLAN ANALYSIS ===');
+    console.log('Starting multi-stage analysis pipeline (geometric adjacency)...');
 
     // ========================================================================
     // STAGE 1: Computer Vision - Detect Room Boundaries
@@ -402,42 +402,17 @@ VALIDATION BEFORE SUBMITTING:
     }
 
     // ========================================================================
-    // STAGE 4: Agentic Verification - Determine Adjacency with AI Reasoning
+    // STAGE 4: Geometric Adjacency Detection - Fast & Deterministic
     // ========================================================================
-    console.log('\n--- STAGE 4: Agentic Adjacency Verification ---');
+    console.log('\n--- STAGE 4: Geometric Adjacency Detection ---');
 
     let adjacency: any[] = [];
     try {
-      // Hard timeout to prevent function timeouts when the agent loops too long
-      // INCREASED: 12s → 25s → 40s → 60s to account for rate limiting delays
-      // With 800ms delay per iteration + potential retry backoffs, need more time
-      const AGENT_TIMEOUT_MS = 60000;
-      console.log(`Starting agentic adjacency analysis (timeout: ${AGENT_TIMEOUT_MS}ms)...`);
-
-      const agentPromise = determineAdjacencyWithAgent(unifiedRooms, CLAUDE_API_KEY);
-      adjacency = await Promise.race([
-        agentPromise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error('agent_timeout')), AGENT_TIMEOUT_MS))
-      ]) as any[];
-
-      console.log(`✓ Agent determined ${adjacency.length} adjacency relationships`);
-
-      // Fallback to geometric if agent returns nothing
-      if (adjacency.length === 0 && unifiedRooms.length > 1) {
-        console.warn('Agent returned no adjacencies (possible for disconnected rooms), using geometric fallback');
-        adjacency = detectAdjacencyGeometric(unifiedRooms);
-      }
+      adjacency = detectAdjacencyGeometric(unifiedRooms);
+      console.log(`✓ Geometric detection found ${adjacency.length} adjacency relationships`);
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      console.error(`Agentic verification ${errorMsg === 'agent_timeout' ? 'timed out' : 'failed'}: ${errorMsg}`);
-      console.log('Falling back to geometric adjacency detection...');
-
-      try {
-        adjacency = detectAdjacencyGeometric(unifiedRooms);
-      } catch (fallbackError) {
-        console.error('Geometric fallback also failed:', fallbackError);
-        adjacency = []; // Return empty adjacency list rather than failing completely
-      }
+      console.error('Geometric adjacency detection failed:', error);
+      adjacency = []; // Return empty adjacency list rather than failing completely
     }
 
     // ========================================================================
@@ -467,12 +442,12 @@ VALIDATION BEFORE SUBMITTING:
       })),
       adjacency: adjacency,
       metadata: {
-        method: 'hybrid-cv-agent',
+        method: 'hybrid-cv-geometric',
         contoursDetected: contours.length,
         roomsMatched: unifiedRooms.length,
         adjacenciesFound: adjacency.length,
         usedSyntheticContours: usedSyntheticContours,
-        pipeline: 'cv-detection → claude-labels → matching → agentic-adjacency'
+        pipeline: 'cv-detection → claude-labels → matching → geometric-adjacency'
       }
     };
 
